@@ -495,7 +495,7 @@ Object.assign(window, { BouncingBall, Button, Badge, QtyStepper, ProductIllustra
   <script type="text/babel">
 const { useEffect: useEffect2, useState: useState2, useRef: useRef2 } = React;
 
-const GRID_N = 4; // 各文字を NxN マスに分割
+const GRID_N = 3; // 各文字を NxN マスに分割
 function HomeScreen({ t, transcript, isListening }) {
   const heroRef = useRef2(null);
   const subRef = useRef2(null);
@@ -587,25 +587,29 @@ function HomeScreen({ t, transcript, isListening }) {
             <span
               key={i}
               ref={node => charRefs.current[i] = node}
-              style={{ position:"relative", display:"inline-block", pointerEvents:"none" }}
+              style={{ position:"relative", display:"inline-block", pointerEvents:"none", color: isAngry ? "var(--danger)" : "var(--ink)" }}
             >
-              <span style={{ color: isAngry ? "var(--danger)" : "var(--ink)" }}>{c}</span>
-              {/* ブロック格子オーバーレイ */}
-              <span style={{ position:"absolute", inset:0, display:"grid", gridTemplate:`repeat(${GRID_N}, 1fr) / repeat(${GRID_N}, 1fr)` }} aria-hidden>
-                {Array.from({length: GRID_N*GRID_N}).map((_, k) => {
-                  const isBroken = broken.has(`${i}-${k}`);
-                  return (
-                    <span key={k} style={{
-                      background: isAngry ? "var(--danger)" : "var(--blue)",
-                      opacity: isBroken ? 0 : 0.78,
-                      transform: isBroken ? "scale(0) rotate(45deg)" : "scale(1)",
-                      transition: "opacity .35s, transform .35s",
-                      borderRight: "1px solid rgba(255,255,255,0.25)",
-                      borderBottom: "1px solid rgba(255,255,255,0.25)",
-                    }}/>
-                  );
-                })}
-              </span>
+              {/* サイズ確保用の透明な本体 */}
+              <span style={{ visibility:"hidden" }}>{c}</span>
+              {/* N×N の破片：各セルにクリップした文字コピー */}
+              {Array.from({length: GRID_N*GRID_N}).map((_, k) => {
+                const row = Math.floor(k / GRID_N), col = k % GRID_N;
+                const cellPct = 100 / GRID_N;
+                const isBroken = broken.has(`${i}-${k}`);
+                // 落下方向：列に応じて左右にぶれる
+                const dx = (col - (GRID_N-1)/2) * 18;
+                const dy = 50 + row * 10;
+                const rot = (col - (GRID_N-1)/2) * 25 + (row - 1) * 10;
+                return (
+                  <span key={k} style={{
+                    position:"absolute", top:0, left:0, width:"100%", height:"100%",
+                    clipPath: `inset(${row*cellPct}% ${(GRID_N-col-1)*cellPct}% ${(GRID_N-row-1)*cellPct}% ${col*cellPct}%)`,
+                    opacity: isBroken ? 0 : 1,
+                    transform: isBroken ? `translate(${dx}px, ${dy}px) rotate(${rot}deg) scale(0.6)` : "none",
+                    transition: "opacity .5s ease-out, transform .5s ease-out",
+                  }}>{c}</span>
+                );
+              })}
             </span>
           ))}
         </h1>

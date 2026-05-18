@@ -973,6 +973,8 @@ JSONのみ返してください（説明不要）:
               setOrderQueue(q => [...q, result.items]);
             }
             setTranscript("");
+            // 処理後に聴き取り再開（stopVoiceで止まっているため明示的に再起動）
+            setTimeout(() => startVoice(), 400);
           } else {
             // ホーム画面では新規注文として解析
             const items = await parseWithHaiku(text);
@@ -992,13 +994,12 @@ JSONのみ返してください（説明不要）:
     };
 
     rec.onend = () => {
-      if (recRef.current === rec) {
-        recRef.current = null;
-        setIsListening(false);
-        // ホーム・確認画面では自動再起動（常時リスニング）
-        if (screenRef.current === "home" || screenRef.current === "confirm") {
-          setTimeout(() => startVoice(), 600);
-        }
+      recRef.current = null;
+      setIsListening(false);
+      // _stopped=true は stopVoice() による意図的停止 → 再起動しない
+      // _stopped=false は自然終了 → ホーム・確認画面なら再起動
+      if (!rec._stopped && (screenRef.current === "home" || screenRef.current === "confirm")) {
+        setTimeout(() => startVoice(), 600);
       }
     };
 
@@ -1039,9 +1040,9 @@ JSONのみ返してください（説明不要）:
   // screenRef を常に最新の screen に同期
   useEffect3(() => { screenRef.current = screen; }, [screen]);
 
-  // ホーム表示と同時に自動で聴き始める
+  // ホーム・確認画面に入ったら自動で聴き始める
   useEffect3(() => {
-    if (screen === "home") {
+    if (screen === "home" || screen === "confirm") {
       const t = setTimeout(() => startVoice(), 400);
       return () => clearTimeout(t);
     }

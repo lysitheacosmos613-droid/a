@@ -854,7 +854,7 @@ function App() {
       });
       const data = await res.json();
       const raw = data.content?.[0]?.text || "";
-      const match = raw.match(/\[[\s\S]*?\]/);
+      const match = raw.match(/\[[\s\S]*\]/);
       if (match) {
         const items = JSON.parse(match[0]).filter(it => window.MENU_MAP[it.id] && it.qty > 0);
         if (items.length) return items;
@@ -900,10 +900,13 @@ JSONのみ返してください（説明不要）:
       });
       const data = await res.json();
       const raw = data.content?.[0]?.text || "";
-      const match = raw.match(/\{[\s\S]*?\}/);
+      console.log("Haiku classify raw:", raw);
+      // 貪欲マッチで外側のオブジェクト全体を取得
+      const match = raw.match(/\{[\s\S]*\}/);
       if (match) {
         const parsed = JSON.parse(match[0]);
         const items = (parsed.items||[]).filter(it=>window.MENU_MAP[it.id]&&it.qty>0);
+        console.log("Haiku classify result:", parsed.type, items);
         return { type: parsed.type === "modify" ? "modify" : "new", items };
       }
     } catch(e) { console.warn("Haiku classify error", e); }

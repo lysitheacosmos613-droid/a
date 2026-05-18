@@ -1001,15 +1001,43 @@ function CartScreen({ t, lang, items, ticketBalance = 20, onBack, onPay }) {
   );
 }
 
-function HistoryScreen({ t, lang, history }) {
+function HistoryScreen({ t, lang, history, onClear }) {
+  const { useState: useStateH } = React;
+  const [confirming, setConfirming] = useStateH(false);
   const totalTickets = history.reduce((s,h)=>s+h.items.reduce((a,b)=>a+(window.MENU_MAP[b.id]?.tickets||0)*b.qty,0),0);
   return (
     <section data-screen-label="06 履歴" style={{ padding:"48px 80px 40px" }}>
-      <div style={{ marginBottom:32 }}>
-        <div className="mono" style={{ fontSize:11, color:"var(--mute)", letterSpacing:"0.28em" }}>{history.length} ORDERS · TODAY</div>
-        <h1 style={{ marginTop:12, fontSize:48, fontWeight:500 }}>{t.history}</h1>
-        <p style={{ marginTop:8, color:"var(--mute)" }}>{t.historySub}</p>
+      <div style={{ display:"flex", alignItems:"flex-end", justifyContent:"space-between", marginBottom:32 }}>
+        <div>
+          <div className="mono" style={{ fontSize:11, color:"var(--mute)", letterSpacing:"0.28em" }}>{history.length} ORDERS · TODAY</div>
+          <h1 style={{ marginTop:12, fontSize:48, fontWeight:500 }}>{t.history}</h1>
+          <p style={{ marginTop:8, color:"var(--mute)" }}>{t.historySub}</p>
+        </div>
+        {history.length > 0 && (
+          <button
+            onClick={() => setConfirming(true)}
+            style={{ padding:"10px 18px", borderRadius:8, border:"1px solid var(--line)", background:"#fff", color:"var(--danger)", fontSize:13, fontWeight:600, cursor:"pointer" }}
+          >
+            🗑 履歴を消す
+          </button>
+        )}
       </div>
+
+      {/* 確認ダイアログ */}
+      {confirming && (
+        <div style={{ position:"fixed", inset:0, zIndex:300, background:"rgba(0,0,0,0.4)", display:"flex", alignItems:"center", justifyContent:"center" }} onClick={()=>setConfirming(false)}>
+          <div onClick={e=>e.stopPropagation()} style={{ background:"#fff", borderRadius:16, padding:"32px 36px", maxWidth:420, boxShadow:"0 24px 60px rgba(0,0,0,0.2)" }}>
+            <div style={{ fontSize:20, fontWeight:600, marginBottom:10 }}>注文履歴を消しますか？</div>
+            <div style={{ fontSize:13, color:"var(--mute)", lineHeight:1.6, marginBottom:24 }}>
+              {history.length}件の注文履歴がすべて削除されます。<br/>この操作は取り消せません。
+            </div>
+            <div style={{ display:"flex", gap:10 }}>
+              <button onClick={()=>setConfirming(false)} style={{ flex:1, padding:"10px", borderRadius:8, border:"1px solid var(--line)", background:"#fff", fontSize:14, cursor:"pointer" }}>キャンセル</button>
+              <button onClick={()=>{ onClear(); setConfirming(false); }} style={{ flex:1, padding:"10px", borderRadius:8, border:"none", background:"var(--danger)", color:"#fff", fontSize:14, fontWeight:600, cursor:"pointer" }}>消す</button>
+            </div>
+          </div>
+        </div>
+      )}
       <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", border:"1px solid var(--line)", borderRadius:12, overflow:"hidden", marginBottom:32 }}>
         {[{label:"ORDERS",value:history.length,color:"var(--ink)"},{label:"ITEMS",value:history.reduce((s,h)=>s+h.items.reduce((a,b)=>a+b.qty,0),0),color:"var(--ink)"},{label:"TICKETS",value:`◈ ${totalTickets}`,color:"var(--blue)"},{label:"AVG / ORDER",value:`◈ ${(totalTickets/Math.max(1,history.length)).toFixed(1)}`,color:"var(--ink)"}].map((k,i)=>(
           <div key={i} style={{ padding:24, borderRight:i<3?"1px solid var(--line)":"none" }}><div className="mono" style={{ fontSize:10, color:"var(--mute)", letterSpacing:"0.28em" }}>{k.label}</div><div className="mono num" style={{ fontSize:32, fontWeight:600, marginTop:8, color:k.color }}>{k.value}</div></div>
@@ -1118,7 +1146,17 @@ function App() {
   const [orderItems, setOrderItems]       = useState3([]);
   const [transcript, setTranscript]       = useState3("");
   const [parseProgress, setParseProgress] = useState3(false);
-  const [history, setHistory]             = useState3(window.SAMPLE_HISTORY);
+  const [history, setHistory] = useState3(() => {
+    try {
+      const saved = localStorage.getItem("ms_history");
+      if (saved) return JSON.parse(saved);
+    } catch(e) {}
+    return window.SAMPLE_HISTORY;
+  });
+  // 履歴が変わったら自動でlocalStorageに保存
+  useEffect3(() => {
+    try { localStorage.setItem("ms_history", JSON.stringify(history)); } catch(e) {}
+  }, [history]);
   const [showThankYou, setShowThankYou]   = useState3(false);
   const [lastOrderId, setLastOrderId]     = useState3(null);
   const [orderQueue, setOrderQueue] = useState3([]); // 順番待ちリスト
@@ -1515,7 +1553,7 @@ function App() {
         {screen==="products"  && <window.ProductsScreen t={t} lang={lang} cart={cart} onChange={handleCartChange} onCheckout={checkoutFromProducts}/>}
         {screen==="confirm"   && <window.ConfirmScreen t={t} lang={lang} items={orderItems} transcript={transcript} isListening={isListening} orderQueue={orderQueue} onEdit={editConfirmItem} onComplete={handleComplete}/>}
         {screen==="cart"      && <window.CartScreen t={t} lang={lang} items={cartItems} onBack={()=>setScreen("products")} onPay={()=>{ setOrderItems(cartItems); handleComplete(); }}/>}
-        {screen==="history"   && <window.HistoryScreen t={t} lang={lang} history={history}/>}
+        {screen==="history"   && <window.HistoryScreen t={t} lang={lang} history={history} onClear={()=>setHistory([])}/>}
       </main>
 
       {showThankYou && <window.ThankYouOverlay t={t} orderId={lastOrderId} onClose={()=>{

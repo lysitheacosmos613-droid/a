@@ -1170,7 +1170,7 @@ function App() {
     setClerkReply(reply);
     speak(reply);
     clearTimeout(clerkTimerRef.current);
-    clerkTimerRef.current = setTimeout(() => setClerkReply(""), 6000);
+    clerkTimerRef.current = setTimeout(() => setClerkReply(""), 14000);
   }
 
   // ローカル事前判定: 明らかな単純注文ならAPI呼ばずに即返す

@@ -570,51 +570,67 @@ function ListeningScreen({ t, lang, transcript, parseProgress, isListening, onRe
   );
 }
 
-function ConfirmScreen({ t, lang, items, transcript, onEdit, onBack, onConfirm }) {
+function ConfirmScreen({ t, lang, items, transcript, isListening, onEdit, onComplete }) {
   const total = items.reduce((s, it) => s + window.MENU_MAP[it.id].tickets * it.qty, 0);
   return (
     <section data-screen-label="03 ご注文確認" style={{ padding:"48px 80px 40px" }}>
+      {/* ヘッダー */}
       <div style={{ display:"flex", alignItems:"flex-end", justifyContent:"space-between", marginBottom:32 }}>
         <div>
-          <div className="mono" style={{ fontSize:11, color:"var(--mute)", letterSpacing:"0.28em" }}>STEP 02 / 04</div>
-          <h1 style={{ marginTop:12, fontSize:48, fontWeight:500 }}>{t.confirm}</h1>
-          <p style={{ marginTop:8, color:"var(--mute)" }}>{t.confirmSub}</p>
+          <h1 style={{ fontSize:48, fontWeight:500 }}>{t.confirm}</h1>
+          <p style={{ marginTop:8, color:"var(--mute)" }}>声で変更・追加・キャンセルできます</p>
         </div>
-        {transcript && <div style={{ maxWidth:360, textAlign:"right" }}><div className="mono" style={{ fontSize:10, color:"var(--mute)", letterSpacing:"0.22em", marginBottom:6 }}>HEARD AS</div><div style={{ fontSize:13, color:"var(--ink-2)", lineHeight:1.6 }}>「{transcript}」</div></div>}
+        {/* リスニングインジケーター */}
+        <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:10 }}>
+          <div style={{ display:"flex", gap:4, alignItems:"center", height:28 }}>
+            {[0.4,0.7,1.0,0.6,0.85,0.5,0.75].map((h,i)=>(
+              <div key={i} style={{ width:3, borderRadius:2, height:`${h*28}px`, background:isListening?"var(--blue)":"var(--mute-2)", animation:isListening?`wave-bar ${0.5+i*0.07}s ease-in-out infinite alternate`:"none", animationDelay:`${i*0.06}s`, transition:"background .3s" }}/>
+            ))}
+          </div>
+          <div className="mono" style={{ fontSize:10, letterSpacing:"0.28em", color:isListening?"var(--blue)":"var(--mute)" }}>
+            {isListening ? "● LISTENING" : "● STANDBY"}
+          </div>
+          {transcript && <div style={{ fontSize:12, color:"var(--mute)", fontStyle:"italic" }}>「{transcript}」</div>}
+        </div>
       </div>
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 380px", gap:40 }}>
-        <div>
-          <div style={{ border:"1px solid var(--line)", borderRadius:12, overflow:"hidden" }}>
-            {items.map((it, idx) => {
-              const m = window.MENU_MAP[it.id], last = idx === items.length - 1;
-              return <div key={it.id} style={{ display:"grid", gridTemplateColumns:"80px 1fr auto auto", alignItems:"center", gap:24, padding:20, borderBottom:last?"none":"1px solid var(--line)" }}>
-                <div style={{ width:80, height:80, overflow:"hidden", borderRadius:8 }}><window.ProductIllustration item={m} size={80}/></div>
+
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 340px", gap:40 }}>
+        {/* 注文リスト */}
+        <div style={{ border:"1px solid var(--line)", borderRadius:12, overflow:"hidden" }}>
+          {items.map((it, idx) => {
+            const m = window.MENU_MAP[it.id], last = idx === items.length - 1;
+            return (
+              <div key={it.id} style={{ display:"grid", gridTemplateColumns:"72px 1fr auto auto", alignItems:"center", gap:20, padding:18, borderBottom:last?"none":"1px solid var(--line)" }}>
+                <div style={{ width:72, height:72, overflow:"hidden", borderRadius:8 }}><window.ProductIllustration item={m} size={72}/></div>
                 <div>
-                  <div style={{ fontSize:18, fontWeight:600 }}>{lang==="ja"?m.nameJa:m.nameEn}</div>
-                  <div style={{ fontSize:12, color:"var(--mute)", marginTop:4 }}>{lang==="ja"?m.subJa:m.subEn}</div>
-                  <div className="mono num" style={{ fontSize:12, color:"var(--mute)", marginTop:6 }}>◈ {m.tickets} × {it.qty}</div>
+                  <div style={{ fontSize:17, fontWeight:600 }}>{lang==="ja"?m.nameJa:m.nameEn}</div>
+                  <div style={{ fontSize:11, color:"var(--mute)", marginTop:3 }}>{lang==="ja"?m.subJa:m.subEn}</div>
+                  <div className="mono num" style={{ fontSize:11, color:"var(--mute)", marginTop:5 }}>◈ {m.tickets} × {it.qty}</div>
                 </div>
                 <window.QtyStepper value={it.qty} onChange={(v)=>onEdit(it.id,v)}/>
-                <div className="mono num" style={{ fontSize:18, fontWeight:600, minWidth:90, textAlign:"right" }}>◈ {m.tickets*it.qty}</div>
-              </div>;
-            })}
-            {items.length===0 && <div style={{ padding:40, textAlign:"center", color:"var(--mute)" }}>商品がありません</div>}
-          </div>
+                <div className="mono num" style={{ fontSize:18, fontWeight:600, minWidth:80, textAlign:"right" }}>◈ {m.tickets*it.qty}</div>
+              </div>
+            );
+          })}
+          {items.length===0 && <div style={{ padding:40, textAlign:"center", color:"var(--mute)" }}>商品がありません</div>}
         </div>
+
+        {/* サマリー＋完了ボタン */}
         <aside style={{ background:"var(--bg-2)", border:"1px solid var(--line)", borderRadius:12, padding:28, alignSelf:"start" }}>
           <div className="mono" style={{ fontSize:10, color:"var(--mute)", letterSpacing:"0.26em" }}>ORDER SUMMARY</div>
-          <div style={{ marginTop:18, display:"flex", justifyContent:"space-between", alignItems:"baseline" }}>
+          <div style={{ marginTop:16, display:"flex", justifyContent:"space-between", alignItems:"baseline" }}>
             <span style={{ fontSize:13, color:"var(--mute)" }}>{lang==="ja"?"点数":"Items"}</span>
             <span className="mono num" style={{ fontSize:14, fontWeight:500 }}>{items.reduce((a,b)=>a+b.qty,0)}</span>
           </div>
-          <div style={{ height:1, background:"var(--line)", margin:"20px 0" }}/>
+          <div style={{ height:1, background:"var(--line)", margin:"18px 0" }}/>
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline" }}>
             <span style={{ fontSize:13, fontWeight:600 }}>{t.total}</span>
-            <span className="mono num" style={{ fontSize:36, fontWeight:600, color:"var(--blue)" }}>◈ {total}</span>
+            <span className="mono num" style={{ fontSize:40, fontWeight:600, color:"var(--blue)" }}>◈ {total}</span>
           </div>
-          <div style={{ marginTop:20, display:"flex", flexDirection:"column", gap:10 }}>
-            <window.Button full size="lg" onClick={onConfirm} icon={window.Icon.arrow(16)} disabled={items.length===0}>{t.proceedPay}</window.Button>
-            <window.Button full variant="outline" onClick={onBack} icon={window.Icon.back(14)}>{t.back}</window.Button>
+          <div style={{ marginTop:24 }}>
+            <window.Button full size="lg" onClick={onComplete} icon={window.Icon.check(16)} disabled={items.length===0}>
+              完了
+            </window.Button>
           </div>
         </aside>
       </div>
@@ -776,11 +792,11 @@ function App() {
   const [history, setHistory]             = useState3(window.SAMPLE_HISTORY);
   const [showThankYou, setShowThankYou]   = useState3(false);
   const [lastOrderId, setLastOrderId]     = useState3(null);
-  const [ticketBalance, setTicketBalance] = useState3(20);
   const recRef = useRef3(null);
   const [isListening, setIsListening] = useState3(false);
   const silenceRef = useRef3(null);
   const screenRef = useRef3("home");
+  const orderItemsRef = useRef3([]);
   const [apiKey, setApiKey] = useState3(() => localStorage.getItem("ms_api_key") || "");
   const [showKeyInput, setShowKeyInput] = useState3(false);
   const [parsing, setParsing] = useState3(false);
@@ -816,6 +832,38 @@ function App() {
       }
     } catch(e) { console.warn("Haiku error", e); }
     return parseTranscript(text); // fallback
+  }
+
+  // 既存注文を音声で変更する
+  async function updateOrderWithHaiku(text, currentItems) {
+    const key = localStorage.getItem("ms_api_key");
+    if (!key) return currentItems;
+    try {
+      const currentStr = JSON.stringify(currentItems.map(it=>({id:it.id,qty:it.qty})));
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type":"application/json", "x-api-key":key, "anthropic-version":"2023-06-01", "anthropic-dangerous-direct-browser-access":"true" },
+        body: JSON.stringify({
+          model: "claude-haiku-4-5",
+          max_tokens: 256,
+          messages: [{ role:"user", content:
+`既存の注文を音声で変更します。更新後の注文をJSON配列のみ返してください。説明不要。
+メニュー: milk(牛乳), pancake(パンケーキ), pudding(プリン), rusk(ラスク), gelato(ジェラート)
+現在の注文: ${currentStr}
+変更の音声:「${text}」
+ルール: キャンセルは除外、追加は既存に加算、数量変更は上書き。キャンセルのみなら[]を返す。
+形式例: [{"id":"milk","qty":2},{"id":"pudding","qty":1}]` }]
+        }),
+      });
+      const data = await res.json();
+      const raw = data.content?.[0]?.text || "";
+      const match = raw.match(/\[[\s\S]*?\]/);
+      if (match) {
+        const updated = JSON.parse(match[0]).filter(it=>window.MENU_MAP[it.id]&&it.qty>0);
+        return updated; // 空配列（全キャンセル）も許容
+      }
+    } catch(e) { console.warn("Haiku update error", e); }
+    return currentItems; // エラー時は変更なし
   }
 
   const t = window.STRINGS[lang];
@@ -870,10 +918,19 @@ function App() {
         silenceRef.current = setTimeout(async () => {
           stopVoice();
           setParsing(true);
-          const items = await parseWithHaiku(text);
-          setParsing(false);
-          setOrderItems(items);
-          setScreen("confirm");
+          if (screenRef.current === "confirm") {
+            // 確認画面では既存注文を変更
+            const updated = await updateOrderWithHaiku(text, orderItemsRef.current);
+            setParsing(false);
+            setOrderItems(updated);
+            setTranscript("");
+          } else {
+            // ホーム画面では新規注文として解析
+            const items = await parseWithHaiku(text);
+            setParsing(false);
+            setOrderItems(items);
+            setScreen("confirm");
+          }
         }, 1500);
       }
     };
@@ -889,8 +946,8 @@ function App() {
       if (recRef.current === rec) {
         recRef.current = null;
         setIsListening(false);
-        // ホーム画面なら自動再起動（常時リスニング）
-        if (screenRef.current === "home") {
+        // ホーム・確認画面では自動再起動（常時リスニング）
+        if (screenRef.current === "home" || screenRef.current === "confirm") {
           setTimeout(() => startVoice(), 600);
         }
       }
@@ -908,16 +965,19 @@ function App() {
 
   function editConfirmItem(id,qty){ setOrderItems((p)=>qty===0?p.filter((it)=>it.id!==id):p.map((it)=>it.id===id?{...it,qty}:it)); }
   function handleCartChange(id,qty){ setCart((p)=>({...p,[id]:qty})); }
-  function confirmToCart(){ setCart(Object.fromEntries(orderItems.map((it)=>[it.id,it.qty]))); setScreen("cart"); }
   function checkoutFromProducts(){ setOrderItems(cartItems); setScreen("cart"); }
-  function handlePay(){
-    const paying=orderItems.length?orderItems:cartItems;
-    const nextId=String(parseInt(history[0]?.id||"0142")+1).padStart(4,"0");
+
+  function handleComplete() {
+    const paying = orderItems;
+    const nextId = String(parseInt(history[0]?.id||"0142")+1).padStart(4,"0");
     setHistory((p)=>[{id:nextId,minAgo:0,items:paying,status:"ready"},...p]);
     setLastOrderId(nextId);
-    const total=paying.reduce((s,it)=>s+(window.MENU_MAP[it.id]?.tickets||0)*it.qty,0);
-    setTicketBalance((b)=>b-total); setCart({}); setOrderItems([]); setShowThankYou(true);
+    setOrderItems([]);
+    setShowThankYou(true);
   }
+
+  // orderItemsRef を常に最新に同期（closure問題回避）
+  useEffect3(() => { orderItemsRef.current = orderItems; }, [orderItems]);
 
   // screenRef を常に最新の screen に同期
   useEffect3(() => { screenRef.current = screen; }, [screen]);
@@ -982,8 +1042,8 @@ function App() {
       <main style={{ flex:1 }}>
         {screen==="home"      && <window.HomeScreen t={t} transcript={transcript} isListening={isListening} />}
         {screen==="products"  && <window.ProductsScreen t={t} lang={lang} cart={cart} onChange={handleCartChange} onCheckout={checkoutFromProducts}/>}
-        {screen==="confirm"   && <window.ConfirmScreen t={t} lang={lang} items={orderItems} transcript={transcript} onEdit={editConfirmItem} onBack={()=>setScreen("home")} onConfirm={confirmToCart}/>}
-        {screen==="cart"      && <window.CartScreen t={t} lang={lang} items={cartItems} ticketBalance={ticketBalance} onBack={()=>setScreen(orderItems.length?"confirm":"products")} onPay={handlePay}/>}
+        {screen==="confirm"   && <window.ConfirmScreen t={t} lang={lang} items={orderItems} transcript={transcript} isListening={isListening} onEdit={editConfirmItem} onComplete={handleComplete}/>}
+        {screen==="cart"      && <window.CartScreen t={t} lang={lang} items={cartItems} onBack={()=>setScreen("products")} onPay={()=>{ setOrderItems(cartItems); handleComplete(); }}/>}
         {screen==="history"   && <window.HistoryScreen t={t} lang={lang} history={history}/>}
       </main>
 

@@ -1052,8 +1052,10 @@ function App() {
               }
               setOrderItems(result.items);
             } else {
-              // 新規注文 → キューに追加
-              setOrderQueue(q => [...q, result.items]);
+              // 新規注文 → 空でなければキューに追加
+              if (result.items.length > 0) {
+                setOrderQueue(q => [...q, result.items]);
+              }
             }
             setTranscript("");
             // 処理後に聴き取り再開（stopVoiceで止まっているため明示的に再起動）
@@ -1062,8 +1064,14 @@ function App() {
             // ホーム画面では新規注文として解析
             const items = await parseWithHaiku(text);
             setParsing(false);
-            setOrderItems(items);
-            setScreen("confirm");
+            if (items.length === 0) {
+              // メニュー外の発話 → 何もせず聞き取り続行
+              setTranscript("");
+              setTimeout(() => startVoice(), 400);
+            } else {
+              setOrderItems(items);
+              setScreen("confirm");
+            }
           }
         }, 1500);
       }
@@ -1093,7 +1101,7 @@ function App() {
   function parseTranscript(text) {
     const items = [];
     window.MENU.forEach((m)=>{ const keys=[m.nameJa,m.nameEn.toLowerCase(),m.id]; if(keys.some((k)=>text.toLowerCase().includes(k.toLowerCase()))){ const m2=text.match(/(\d+)/); items.push({id:m.id,qty:m2?Math.min(9,parseInt(m2[1])):1}); }});
-    return items.length ? items : [{id:"milk",qty:1}];
+    return items; // マッチなしなら空配列を返す（デフォルト牛乳は廃止）
   }
 
   function editConfirmItem(id,qty){ setOrderItems((p)=>qty===0?p.filter((it)=>it.id!==id):p.map((it)=>it.id===id?{...it,qty}:it)); }

@@ -516,8 +516,16 @@ function HomeScreen({ t, transcript, isListening }) {
   const [broken, setBroken] = useState2(new Set()); // 壊れたセル "i-k"
   const [fallingItems, setFallingItems] = useState2([]); // {id, type, x, y, vx, vy, rot, vrot}
   const [particles, setParticles] = useState2([]); // {id, x, y, vx, vy, life, color}
+  const [rareFlash, setRareFlash] = useState2(0); // レア演出キー
   const itemIdRef = useRef2(0);
   const particleIdRef = useRef2(0);
+  const rareTimerRef = useRef2(null);
+
+  function showRareEffect() {
+    setRareFlash(Date.now());
+    clearTimeout(rareTimerRef.current);
+    rareTimerRef.current = setTimeout(() => setRareFlash(0), 1800);
+  }
 
   const chars = (t.welcome || "").split("");
   const totalCells = chars.length * GRID_N * GRID_N;
@@ -637,33 +645,46 @@ function HomeScreen({ t, transcript, isListening }) {
       if (prev.has(key)) return prev;
       const next = new Set(prev); next.add(key); return next;
     });
-    // アイテムを落とす
+    // ブロック破壊パーティクル（常時発生）
     const [charIdx, cellIdx] = key.split("-").map(Number);
     const charNode = charRefs.current[charIdx];
     const heroEl = heroRef.current;
-    if (charNode && heroEl) {
-      const cr = charNode.getBoundingClientRect();
-      const hr = heroEl.getBoundingClientRect();
-      const row = Math.floor(cellIdx / GRID_N), col = cellIdx % GRID_N;
-      const cellW = cr.width / GRID_N, cellH = cr.height / GRID_N;
-      const x = cr.left - hr.left + col * cellW + cellW/2;
-      const y = cr.top - hr.top + row * cellH + cellH/2;
-      const gameItems = ["⭐","💎","🪙","❤️","✨","🌟","🎁","🍒","🍓","🔔","💰","🌈"];
-      const type = gameItems[Math.floor(Math.random()*gameItems.length)];
-      setFallingItems(prev => {
-        const item = {
-          id: itemIdRef.current++,
-          type, x, y,
-          vx: (Math.random()-0.5) * 280,
-          vy: -120 - Math.random()*60,
-          rot: (Math.random()-0.5)*60,
-          vrot: (Math.random()-0.5)*420,
-        };
-        // 上限30個（古いものから捨てる）
-        return prev.length >= 30 ? [...prev.slice(prev.length-29), item] : [...prev, item];
-      });
-      // ブロック破壊パーティクル
-      spawnParticles(x, y, 6);
+    if (!charNode || !heroEl) return;
+    const cr = charNode.getBoundingClientRect();
+    const hr = heroEl.getBoundingClientRect();
+    const row = Math.floor(cellIdx / GRID_N), col = cellIdx % GRID_N;
+    const cellW = cr.width / GRID_N, cellH = cr.height / GRID_N;
+    const x = cr.left - hr.left + col * cellW + cellW/2;
+    const y = cr.top - hr.top + row * cellH + cellH/2;
+    spawnParticles(x, y, 6);
+
+    // アイテム出現抽選（25%でドロップ）
+    if (Math.random() > 0.25) return;
+
+    // レア抽選（10%でレア）
+    const NORMAL_ITEMS = ["⭐","❤️","✨","🔔","🍒","🍓","🪙"];
+    const RARE_ITEMS = ["💎","👑","🏆","🌈","💰","🎁","🌟"];
+    const isRare = Math.random() < 0.10;
+    const pool = isRare ? RARE_ITEMS : NORMAL_ITEMS;
+    const type = pool[Math.floor(Math.random()*pool.length)];
+
+    setFallingItems(prev => {
+      const item = {
+        id: itemIdRef.current++,
+        type, x, y,
+        vx: (Math.random()-0.5) * 140,
+        vy: -40 + Math.random()*20,
+        rot: (Math.random()-0.5)*30,
+        vrot: (Math.random()-0.5)*240,
+        rare: isRare,
+      };
+      return prev.length >= 30 ? [...prev.slice(prev.length-29), item] : [...prev, item];
+    });
+
+    // レア確定演出
+    if (isRare) {
+      spawnParticles(x, y, 24);
+      showRareEffect();
     }
   }
 
@@ -680,23 +701,41 @@ function HomeScreen({ t, transcript, isListening }) {
             onPointerDown={(e)=>{ e.stopPropagation(); collectItem(it.id); }}
             style={{
               position:"absolute",
-              left: it.x - 32, top: it.y - 32,
-              width:64, height:64,
+              left: it.x - 36, top: it.y - 36,
+              width:72, height:72,
               display:"flex", alignItems:"center", justifyContent:"center",
-              fontSize:44,
+              fontSize: it.rare ? 56 : 44,
               transform:`rotate(${it.rot}deg)`,
-              filter:"drop-shadow(0 4px 8px rgba(0,0,0,0.15))",
+              filter: it.rare
+                ? "drop-shadow(0 0 16px gold) drop-shadow(0 4px 10px rgba(255,180,0,0.6))"
+                : "drop-shadow(0 4px 8px rgba(0,0,0,0.15))",
               willChange:"transform",
               cursor:"pointer",
               pointerEvents:"auto",
               userSelect:"none",
               touchAction:"none",
+              animation: it.rare ? "rare-pulse 0.8s ease-in-out infinite" : "none",
             }}
           >
             {it.type}
           </div>
         ))}
+        <style>{`@keyframes rare-pulse { 0%,100% { filter: drop-shadow(0 0 16px gold) drop-shadow(0 4px 10px rgba(255,180,0,0.6)); } 50% { filter: drop-shadow(0 0 28px #ffd700) drop-shadow(0 4px 14px rgba(255,140,0,0.9)); } }`}</style>
       </div>
+
+      {/* レア確定演出フラッシュ */}
+      {rareFlash > 0 && (
+        <div key={rareFlash} style={{ position:"absolute", inset:0, zIndex:6, pointerEvents:"none", display:"flex", alignItems:"center", justifyContent:"center" }}>
+          <div style={{ position:"absolute", inset:0, background:"radial-gradient(circle, rgba(255,215,0,0.35) 0%, rgba(255,180,0,0) 60%)", animation:"rare-flash 1.8s ease-out forwards" }}/>
+          <div style={{ position:"relative", fontSize:96, fontWeight:900, color:"#ffb800", textShadow:"0 0 30px #ffd700, 0 4px 0 #ff8800, 4px 4px 0 rgba(0,0,0,0.15)", letterSpacing:"0.05em", animation:"rare-text 1.8s cubic-bezier(.2,1.4,.4,1) forwards", WebkitTextStroke:"2px #fff" }}>
+            ★ RARE! ★
+          </div>
+          <style>{`
+            @keyframes rare-flash { 0%{opacity:0;transform:scale(0.5);} 20%{opacity:1;transform:scale(1.2);} 100%{opacity:0;transform:scale(1.4);} }
+            @keyframes rare-text { 0%{transform:scale(0) rotate(-20deg);opacity:0;} 30%{transform:scale(1.2) rotate(5deg);opacity:1;} 70%{transform:scale(1) rotate(0);opacity:1;} 100%{transform:scale(0.8) translateY(-40px);opacity:0;} }
+          `}</style>
+        </div>
+      )}
 
       {/* パーティクル */}
       <div style={{ position:"absolute", inset:0, zIndex:4, pointerEvents:"none", overflow:"hidden" }}>

@@ -880,21 +880,25 @@ function App() {
           model: "claude-haiku-4-5",
           max_tokens: 300,
           messages: [{ role:"user", content:
-`ミルクスタンドの注文システムです。以下を判定してJSON1行だけ返してください。
+`ミルクスタンドの注文システムです。JSON1行だけ返してください。説明不要。
 
 メニュー: milk=牛乳, pancake=パンケーキ, pudding=プリン, rusk=ラスク, gelato=ジェラート
-現在確認中の注文: ${currentStr}
-新しい音声:「${text}」
+現在の注文: ${currentStr}
+音声:「${text}」
 
-【判定基準】
-type:"modify" → 音声に「変更」「キャンセル」「なしで」「やっぱり」「訂正」「削除」「追加」「増やして」「減らして」など現在の注文を修正する言葉がある
-type:"new" → 修正ワードがなく、まったく独立した新しい注文（別の人の注文）
+【変更(modify)】現在の注文への修正:
+- 「〇〇キャンセル」「〇〇なしで」「〇〇削除」→ その商品をitemsから除外して返す
+- 「キャンセル」「全部キャンセル」「やっぱりいらない」→ items:[] で返す
+- 「〇〇追加」「〇〇も」→ 既存に加算して返す
+- 「〇〇を△個に」「〇〇△個」→ 数量を上書きして返す
+→ 出力: {"type":"modify","items":[変更後の全注文]}
 
-modifyの場合: 変更後の完全な注文（キャンセルは除外、追加は既存に加算、数量変更は上書き）
-newの場合: 音声の注文内容のみ
+【新規(new)】現在の注文と無関係な別人の注文:
+→ 出力: {"type":"new","items":[新しい注文]}
 
-出力例: {"type":"modify","items":[{"id":"milk","qty":3}]}
-出力例: {"type":"new","items":[{"id":"pudding","qty":1}]}` }]
+例: 現在[milk×2]で「牛乳キャンセル」→ {"type":"modify","items":[]}
+例: 現在[milk×2]で「プリンもください」→ {"type":"modify","items":[{"id":"milk","qty":2},{"id":"pudding","qty":1}]}
+例: 現在[milk×2]で「パンケーキひとつ」→ {"type":"new","items":[{"id":"pancake","qty":1}]}` }]
         }),
       });
       const data = await res.json();
@@ -977,6 +981,12 @@ newの場合: 音声の注文内容のみ
             const result = await classifyAndActWithHaiku(text, orderItemsRef.current);
             setParsing(false);
             if (result.type === "modify") {
+              if (result.items.length === 0) {
+                // 全キャンセル → ホームへ戻る
+                setOrderItems([]);
+                setScreen("home");
+                return;
+              }
               setOrderItems(result.items);
             } else {
               // 新規注文 → キューに追加

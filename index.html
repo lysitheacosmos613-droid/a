@@ -504,14 +504,21 @@ function HomeScreen({ t, transcript, isListening }) {
   const [dim, setDim] = useState2({ w: 1280, h: 760 });
   const [obstacles, setObstacles] = useState2([]);
   const [broken, setBroken] = useState2(new Set()); // 壊れたセル "i-k"
+  const [destroyCount, setDestroyCount] = useState2(0); // 全壊回数
 
-  const chars = (t.welcome || "").split("");
+  // 3回全壊後は「おい、やめろ！」を表示
+  const displayText = destroyCount >= 3 ? "おい、やめろ！" : t.welcome;
+  const chars = (displayText || "").split("");
   const totalCells = chars.length * GRID_N * GRID_N;
+  const isAngry = destroyCount >= 3;
 
-  // 全壊で自動リセット
+  // 全壊で自動リセット＆カウント増加
   useEffect2(() => {
     if (totalCells && broken.size >= totalCells) {
-      const id = setTimeout(() => setBroken(new Set()), 1500);
+      const id = setTimeout(() => {
+        setBroken(new Set());
+        setDestroyCount(c => c + 1);
+      }, 1500);
       return () => clearTimeout(id);
     }
   }, [broken, totalCells]);
@@ -582,14 +589,14 @@ function HomeScreen({ t, transcript, isListening }) {
               ref={node => charRefs.current[i] = node}
               style={{ position:"relative", display:"inline-block", pointerEvents:"none" }}
             >
-              <span style={{ color:"var(--ink)" }}>{c}</span>
+              <span style={{ color: isAngry ? "var(--danger)" : "var(--ink)" }}>{c}</span>
               {/* ブロック格子オーバーレイ */}
               <span style={{ position:"absolute", inset:0, display:"grid", gridTemplate:`repeat(${GRID_N}, 1fr) / repeat(${GRID_N}, 1fr)` }} aria-hidden>
                 {Array.from({length: GRID_N*GRID_N}).map((_, k) => {
                   const isBroken = broken.has(`${i}-${k}`);
                   return (
                     <span key={k} style={{
-                      background: "var(--blue)",
+                      background: isAngry ? "var(--danger)" : "var(--blue)",
                       opacity: isBroken ? 0 : 0.78,
                       transform: isBroken ? "scale(0) rotate(45deg)" : "scale(1)",
                       transition: "opacity .35s, transform .35s",

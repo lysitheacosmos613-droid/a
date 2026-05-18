@@ -570,7 +570,7 @@ function ListeningScreen({ t, lang, transcript, parseProgress, isListening, onRe
   );
 }
 
-function ConfirmScreen({ t, lang, items, transcript, isListening, onEdit, onComplete }) {
+function ConfirmScreen({ t, lang, items, transcript, isListening, orderQueue, onEdit, onComplete }) {
   const total = items.reduce((s, it) => s + window.MENU_MAP[it.id].tickets * it.qty, 0);
   return (
     <section data-screen-label="03 ご注文確認" style={{ padding:"48px 80px 40px" }}>
@@ -634,6 +634,39 @@ function ConfirmScreen({ t, lang, items, transcript, isListening, onEdit, onComp
           </div>
         </aside>
       </div>
+
+      {/* キュー表示 */}
+      {orderQueue && orderQueue.length > 0 && (
+        <div style={{ marginTop:40 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:16 }}>
+            <div className="mono" style={{ fontSize:10, letterSpacing:"0.28em", color:"var(--mute)" }}>QUEUE — 順番待ち</div>
+            <div style={{ background:"var(--blue)", color:"#fff", borderRadius:"50%", width:20, height:20, display:"flex", alignItems:"center", justifyContent:"center", fontSize:11, fontWeight:700 }}>{orderQueue.length}</div>
+          </div>
+          <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+            {orderQueue.map((qItems, qi) => {
+              const qTotal = qItems.reduce((s,it)=>s+(window.MENU_MAP[it.id]?.tickets||0)*it.qty, 0);
+              return (
+                <div key={qi} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"16px 20px", background:"var(--bg-2)", border:"1px solid var(--line)", borderRadius:10, opacity: 0.8 }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                    <div className="mono num" style={{ fontSize:12, color:"var(--mute)", minWidth:24 }}>#{qi+2}</div>
+                    <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+                      {qItems.map((it,i)=>{
+                        const m = window.MENU_MAP[it.id];
+                        return <span key={i} style={{ display:"inline-flex", alignItems:"center", gap:5, fontSize:12, padding:"4px 9px", background:"#fff", border:"1px solid var(--line)", borderRadius:6 }}>
+                          <span style={{ width:14, height:14, borderRadius:3, overflow:"hidden", display:"inline-block" }}><window.ProductIllustration item={m} size={14}/></span>
+                          {lang==="ja"?m.nameJa:m.nameEn}
+                          {it.qty>1 && <span className="mono num" style={{ color:"var(--mute)" }}>×{it.qty}</span>}
+                        </span>;
+                      })}
+                    </div>
+                  </div>
+                  <div className="mono num" style={{ fontSize:15, fontWeight:600, color:"var(--blue)", marginLeft:16 }}>◈ {qTotal}</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </section>
   );
 }
@@ -792,11 +825,13 @@ function App() {
   const [history, setHistory]             = useState3(window.SAMPLE_HISTORY);
   const [showThankYou, setShowThankYou]   = useState3(false);
   const [lastOrderId, setLastOrderId]     = useState3(null);
+  const [orderQueue, setOrderQueue] = useState3([]); // 順番待ちリスト
   const recRef = useRef3(null);
   const [isListening, setIsListening] = useState3(false);
   const silenceRef = useRef3(null);
   const screenRef = useRef3("home");
   const orderItemsRef = useRef3([]);
+  const orderQueueRef = useRef3([]);
   const [apiKey, setApiKey] = useState3(() => localStorage.getItem("ms_api_key") || "");
   const [showKeyInput, setShowKeyInput] = useState3(false);
   const [parsing, setParsing] = useState3(false);
@@ -834,10 +869,14 @@ function App() {
     return parseTranscript(text); // fallback
   }
 
-  // 既存注文を音声で変更する
-  async function updateOrderWithHaiku(text, currentItems) {
+  // 確認画面中の音声を「変更」か「新規注文」か判定して処理
+  // 戻り値: { type: "modify", items } または { type: "new", items }
+  async function classifyAndActWithHaiku(text, currentItems) {
     const key = localStorage.getItem("ms_api_key");
-    if (!key) return currentItems;
+    if (!key) {
+      // APIキーなし: フォールバックは新規注文扱い
+      return { type: "new", items: parseTranscript(text) };
+    }
     try {
       const currentStr = JSON.stringify(currentItems.map(it=>({id:it.id,qty:it.qty})));
       const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -845,25 +884,37 @@ function App() {
         headers: { "Content-Type":"application/json", "x-api-key":key, "anthropic-version":"2023-06-01", "anthropic-dangerous-direct-browser-access":"true" },
         body: JSON.stringify({
           model: "claude-haiku-4-5",
-          max_tokens: 256,
+          max_tokens: 300,
           messages: [{ role:"user", content:
-`既存の注文を音声で変更します。更新後の注文をJSON配列のみ返してください。説明不要。
+`あなたはミルクスタンドの注文AIです。確認中の注文がある状態で新しい音声が入りました。
 メニュー: milk(牛乳), pancake(パンケーキ), pudding(プリン), rusk(ラスク), gelato(ジェラート)
-現在の注文: ${currentStr}
-変更の音声:「${text}」
-ルール: キャンセルは除外、追加は既存に加算、数量変更は上書き。キャンセルのみなら[]を返す。
-形式例: [{"id":"milk","qty":2},{"id":"pudding","qty":1}]` }]
+現在確認中の注文: ${currentStr}
+新しい音声:「${text}」
+
+判定ルール:
+- 「変更・キャンセル・追加・やっぱり・訂正」など現在の注文への修正 → type:"modify"
+- 現在の注文と無関係な新しい注文 → type:"new"
+
+変更の場合: 更新後の全注文を返す（キャンセルは除外、追加は加算、数量変更は上書き）
+新規の場合: その音声から読み取った注文を返す
+
+JSONのみ返してください（説明不要）:
+{"type":"modify","items":[{"id":"milk","qty":2}]}
+または
+{"type":"new","items":[{"id":"pancake","qty":1}]}` }]
         }),
       });
       const data = await res.json();
       const raw = data.content?.[0]?.text || "";
-      const match = raw.match(/\[[\s\S]*?\]/);
+      const match = raw.match(/\{[\s\S]*?\}/);
       if (match) {
-        const updated = JSON.parse(match[0]).filter(it=>window.MENU_MAP[it.id]&&it.qty>0);
-        return updated; // 空配列（全キャンセル）も許容
+        const parsed = JSON.parse(match[0]);
+        const items = (parsed.items||[]).filter(it=>window.MENU_MAP[it.id]&&it.qty>0);
+        return { type: parsed.type === "modify" ? "modify" : "new", items };
       }
-    } catch(e) { console.warn("Haiku update error", e); }
-    return currentItems; // エラー時は変更なし
+    } catch(e) { console.warn("Haiku classify error", e); }
+    // エラー時は新規注文として追加
+    return { type: "new", items: parseTranscript(text) };
   }
 
   const t = window.STRINGS[lang];
@@ -919,10 +970,15 @@ function App() {
           stopVoice();
           setParsing(true);
           if (screenRef.current === "confirm") {
-            // 確認画面では既存注文を変更
-            const updated = await updateOrderWithHaiku(text, orderItemsRef.current);
+            // 確認画面: 変更か新規かをHaikuで判定
+            const result = await classifyAndActWithHaiku(text, orderItemsRef.current);
             setParsing(false);
-            setOrderItems(updated);
+            if (result.type === "modify") {
+              setOrderItems(result.items);
+            } else {
+              // 新規注文 → キューに追加
+              setOrderQueue(q => [...q, result.items]);
+            }
             setTranscript("");
           } else {
             // ホーム画面では新規注文として解析
@@ -972,12 +1028,20 @@ function App() {
     const nextId = String(parseInt(history[0]?.id||"0142")+1).padStart(4,"0");
     setHistory((p)=>[{id:nextId,minAgo:0,items:paying,status:"ready"},...p]);
     setLastOrderId(nextId);
-    setOrderItems([]);
-    setShowThankYou(true);
+    // キューに次の注文があれば昇格、なければホームへ
+    const nextQueue = orderQueueRef.current;
+    if (nextQueue.length > 0) {
+      setOrderItems(nextQueue[0]);
+      setOrderQueue(nextQueue.slice(1));
+    } else {
+      setOrderItems([]);
+      setShowThankYou(true);
+    }
   }
 
-  // orderItemsRef を常に最新に同期（closure問題回避）
+  // orderItemsRef / orderQueueRef を常に最新に同期（closure問題回避）
   useEffect3(() => { orderItemsRef.current = orderItems; }, [orderItems]);
+  useEffect3(() => { orderQueueRef.current = orderQueue; }, [orderQueue]);
 
   // screenRef を常に最新の screen に同期
   useEffect3(() => { screenRef.current = screen; }, [screen]);
@@ -1041,7 +1105,7 @@ function App() {
       <main style={{ flex:1 }}>
         {screen==="home"      && <window.HomeScreen t={t} transcript={transcript} isListening={isListening} />}
         {screen==="products"  && <window.ProductsScreen t={t} lang={lang} cart={cart} onChange={handleCartChange} onCheckout={checkoutFromProducts}/>}
-        {screen==="confirm"   && <window.ConfirmScreen t={t} lang={lang} items={orderItems} transcript={transcript} isListening={isListening} onEdit={editConfirmItem} onComplete={handleComplete}/>}
+        {screen==="confirm"   && <window.ConfirmScreen t={t} lang={lang} items={orderItems} transcript={transcript} isListening={isListening} orderQueue={orderQueue} onEdit={editConfirmItem} onComplete={handleComplete}/>}
         {screen==="cart"      && <window.CartScreen t={t} lang={lang} items={cartItems} onBack={()=>setScreen("products")} onPay={()=>{ setOrderItems(cartItems); handleComplete(); }}/>}
         {screen==="history"   && <window.HistoryScreen t={t} lang={lang} history={history}/>}
       </main>

@@ -880,22 +880,21 @@ function App() {
           model: "claude-haiku-4-5",
           max_tokens: 300,
           messages: [{ role:"user", content:
-`あなたはミルクスタンドの注文AIです。確認中の注文がある状態で新しい音声が入りました。
-メニュー: milk(牛乳), pancake(パンケーキ), pudding(プリン), rusk(ラスク), gelato(ジェラート)
+`ミルクスタンドの注文システムです。以下を判定してJSON1行だけ返してください。
+
+メニュー: milk=牛乳, pancake=パンケーキ, pudding=プリン, rusk=ラスク, gelato=ジェラート
 現在確認中の注文: ${currentStr}
 新しい音声:「${text}」
 
-判定ルール:
-- 「変更・キャンセル・追加・やっぱり・訂正」など現在の注文への修正 → type:"modify"
-- 現在の注文と無関係な新しい注文 → type:"new"
+【判定基準】
+type:"modify" → 音声に「変更」「キャンセル」「なしで」「やっぱり」「訂正」「削除」「追加」「増やして」「減らして」など現在の注文を修正する言葉がある
+type:"new" → 修正ワードがなく、まったく独立した新しい注文（別の人の注文）
 
-変更の場合: 更新後の全注文を返す（キャンセルは除外、追加は加算、数量変更は上書き）
-新規の場合: その音声から読み取った注文を返す
+modifyの場合: 変更後の完全な注文（キャンセルは除外、追加は既存に加算、数量変更は上書き）
+newの場合: 音声の注文内容のみ
 
-JSONのみ返してください（説明不要）:
-{"type":"modify","items":[{"id":"milk","qty":2}]}
-または
-{"type":"new","items":[{"id":"pancake","qty":1}]}` }]
+出力例: {"type":"modify","items":[{"id":"milk","qty":3}]}
+出力例: {"type":"new","items":[{"id":"pudding","qty":1}]}` }]
         }),
       });
       const data = await res.json();
@@ -929,6 +928,13 @@ JSONのみ返してください（説明不要）:
   }
 
   const startVoice = useCallback3(() => {
+    // 既存のrecが動いていたら先に止める（二重起動防止）
+    if (recRef.current) {
+      recRef.current._stopped = true;
+      try { recRef.current.stop(); } catch(e) {}
+      recRef.current = null;
+    }
+    clearTimeout(silenceRef.current);
     setTranscript(""); setParseProgress(false);
 
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;

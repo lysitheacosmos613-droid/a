@@ -775,12 +775,11 @@ function HistoryScreen({ t, lang, history }) {
         {history.map((h)=>{
           const tone=h.status==="ready"?"blue":"ok", label=h.status==="ready"?t.ready:t.done;
           const total=h.items.reduce((s,it)=>s+(window.MENU_MAP[it.id]?.tickets||0)*it.qty,0);
-          return <div key={h.id} style={{ display:"grid", gridTemplateColumns:"100px 120px 1fr auto auto", alignItems:"center", gap:24, padding:"20px 24px", border:"1px solid var(--line)", borderRadius:10, background:"#fff" }}>
+          return <div key={h.id} style={{ display:"grid", gridTemplateColumns:"100px 120px 1fr auto", alignItems:"center", gap:24, padding:"20px 24px", border:"1px solid var(--line)", borderRadius:10, background:"#fff" }}>
             <div><div className="mono" style={{ fontSize:10, color:"var(--mute)", letterSpacing:"0.24em" }}>{t.orderNo}</div><div className="mono num" style={{ fontSize:18, fontWeight:600, marginTop:2 }}>#{h.id}</div></div>
             <div><window.Badge tone={tone}>{label}</window.Badge><div className="mono" style={{ fontSize:11, color:"var(--mute)", marginTop:8 }}>{h.minAgo===0?t.now:`${h.minAgo} ${t.minAgo}`}</div></div>
             <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>{h.items.map((it,i)=>{const m=window.MENU_MAP[it.id];return <span key={i} style={{ display:"inline-flex", alignItems:"center", gap:6, fontSize:12, padding:"5px 10px", background:"var(--bg-3)", borderRadius:6 }}><span style={{ width:14, height:14, borderRadius:3, overflow:"hidden", display:"inline-block" }}><window.ProductIllustration item={m} size={14}/></span>{lang==="ja"?m.nameJa:m.nameEn}{it.qty>1&&<span className="mono num" style={{ color:"var(--mute)" }}>×{it.qty}</span>}</span>;})}</div>
             <div className="mono num" style={{ fontSize:18, fontWeight:600, color:"var(--blue)" }}>◈ {total}</div>
-            <window.Badge tone="mute">{t.paid}</window.Badge>
           </div>;
         })}
       </div>
@@ -1020,7 +1019,7 @@ JSONのみ返してください（説明不要）:
   function handleComplete() {
     const paying = orderItems;
     const nextId = String(parseInt(history[0]?.id||"0000")+1).padStart(4,"0");
-    setHistory((p)=>[{id:nextId,minAgo:0,items:paying,status:"ready"},...p]);
+    setHistory((p)=>[{id:nextId,minAgo:0,items:paying,status:"done"},...p]);
     setLastOrderId(nextId);
     // キューに次の注文があれば昇格、なければホームへ
     const nextQueue = orderQueueRef.current;

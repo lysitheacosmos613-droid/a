@@ -506,12 +506,8 @@ function HomeScreen({ t, transcript, isListening }) {
   const [broken, setBroken] = useState2(new Set()); // 壊れたセル "i-k"
   const [fallingItems, setFallingItems] = useState2([]); // {id, type, x, y, vx, vy, rot, vrot}
   const [particles, setParticles] = useState2([]); // {id, x, y, vx, vy, life, color}
-  const [score, setScore] = useState2(0);
-  const [combo, setCombo] = useState2(0);
-  const [comboFlash, setComboFlash] = useState2(0); // 表示制御
   const itemIdRef = useRef2(0);
   const particleIdRef = useRef2(0);
-  const comboTimerRef = useRef2(null);
 
   const chars = (t.welcome || "").split("");
   const totalCells = chars.length * GRID_N * GRID_N;
@@ -524,62 +520,60 @@ function HomeScreen({ t, transcript, isListening }) {
     }
   }, [broken, totalCells]);
 
-  // アイテム＆パーティクル落下アニメーション
+  // アイテム＆パーティクル落下アニメーション（必要時のみRAF動かす）
+  const hasAnim = fallingItems.length > 0 || particles.length > 0;
   useEffect2(() => {
+    if (!hasAnim) return;
     let raf, last;
     const step = (t) => {
       if (!last) last = t;
       const dt = Math.min((t - last) / 1000, 0.05);
       last = t;
-      setFallingItems(prev => prev.length === 0 ? prev : prev
-        .map(it => ({ ...it, x: it.x + it.vx * dt, y: it.y + it.vy * dt, vy: it.vy + 1600 * dt, rot: it.rot + it.vrot * dt }))
-        .filter(it => it.y < dim.h + 120));
-      setParticles(prev => prev.length === 0 ? prev : prev
-        .map(p => ({ ...p, x: p.x + p.vx * dt, y: p.y + p.vy * dt, vy: p.vy + 900 * dt, life: p.life - dt }))
-        .filter(p => p.life > 0));
-      raf = requestAnimationFrame(step);
+      let stillItems = 0, stillPart = 0;
+      setFallingItems(prev => {
+        if (prev.length === 0) return prev;
+        const next = prev
+          .map(it => ({ ...it, x: it.x + it.vx * dt, y: it.y + it.vy * dt, vy: it.vy + 1600 * dt, rot: it.rot + it.vrot * dt }))
+          .filter(it => it.y < dim.h + 120);
+        stillItems = next.length;
+        return next;
+      });
+      setParticles(prev => {
+        if (prev.length === 0) return prev;
+        const next = prev
+          .map(p => ({ ...p, x: p.x + p.vx * dt, y: p.y + p.vy * dt, vy: p.vy + 900 * dt, life: p.life - dt }))
+          .filter(p => p.life > 0);
+        stillPart = next.length;
+        return next;
+      });
+      if (stillItems > 0 || stillPart > 0) raf = requestAnimationFrame(step);
     };
     raf = requestAnimationFrame(step);
     return () => cancelAnimationFrame(raf);
-  }, [dim.h]);
-
-  // コンボリセットタイマー
-  function bumpCombo() {
-    setCombo(c => {
-      const next = c + 1;
-      setComboFlash(Date.now());
-      clearTimeout(comboTimerRef.current);
-      comboTimerRef.current = setTimeout(() => setCombo(0), 1500);
-      return next;
-    });
-  }
+  }, [hasAnim, dim.h]);
 
   // パーティクル発生
+  const PARTICLE_COLORS = ["#ff5b6e","#ffb800","#0047ff","#1f8a5b","#a855f7","#fb923c"];
   function spawnParticles(x, y, count = 8) {
-    const colors = ["#ff5b6e","#ffb800","#0047ff","#1f8a5b","#a855f7","#fb923c"];
     const newOnes = Array.from({length: count}, () => ({
       id: particleIdRef.current++,
       x, y,
       vx: (Math.random()-0.5) * 500,
       vy: -150 - Math.random()*200,
       life: 0.7 + Math.random()*0.4,
-      color: colors[Math.floor(Math.random()*colors.length)],
+      color: PARTICLE_COLORS[Math.floor(Math.random()*PARTICLE_COLORS.length)],
       size: 6 + Math.random()*6,
     }));
-    setParticles(prev => [...prev, ...newOnes]);
+    setParticles(prev => prev.length >= 80 ? [...prev.slice(prev.length-80+count), ...newOnes] : [...prev, ...newOnes]);
   }
 
   // アイテムをタップしてコレクト
-  function collectItem(itemId, pts = 100) {
+  function collectItem(itemId) {
     setFallingItems(prev => {
       const item = prev.find(it => it.id === itemId);
-      if (item) {
-        spawnParticles(item.x, item.y, 12);
-        bumpCombo();
-      }
+      if (item) spawnParticles(item.x, item.y, 12);
       return prev.filter(it => it.id !== itemId);
     });
-    setScore(s => s + pts * Math.max(1, combo));
   }
 
   useEffect2(() => {
@@ -646,14 +640,18 @@ function HomeScreen({ t, transcript, isListening }) {
       const y = cr.top - hr.top + row * cellH + cellH/2;
       const gameItems = ["⭐","💎","🪙","❤️","✨","🌟","🎁","🍒","🍓","🔔","💰","🌈"];
       const type = gameItems[Math.floor(Math.random()*gameItems.length)];
-      setFallingItems(prev => [...prev, {
-        id: itemIdRef.current++,
-        type, x, y,
-        vx: (Math.random()-0.5) * 280,
-        vy: -120 - Math.random()*60,
-        rot: (Math.random()-0.5)*60,
-        vrot: (Math.random()-0.5)*420,
-      }]);
+      setFallingItems(prev => {
+        const item = {
+          id: itemIdRef.current++,
+          type, x, y,
+          vx: (Math.random()-0.5) * 280,
+          vy: -120 - Math.random()*60,
+          rot: (Math.random()-0.5)*60,
+          vrot: (Math.random()-0.5)*420,
+        };
+        // 上限30個（古いものから捨てる）
+        return prev.length >= 30 ? [...prev.slice(prev.length-29), item] : [...prev, item];
+      });
       // ブロック破壊パーティクル
       spawnParticles(x, y, 6);
     }
@@ -1160,19 +1158,19 @@ function App() {
   }
 
   // ローカル事前判定: 明らかな単純注文ならAPI呼ばずに即返す
+  const STOP_WORDS_RE = /[?？!！]|教えて|どう|何|なに|どこ|いくら|どんな|ありますか|です?か|ハロー|hello|こんにちは|ありがと|おすすめ|うまい|美味|まずい|やめ|キャンセル|cancel|変更|追加|やっぱ|削除|remove|もう一度|もう一回|戻|hi|hey/i;
+  const NUM_MAP = { "一":1,"二":2,"三":3,"四":4,"五":5,"六":6,"七":7,"八":8,"九":9,"いち":1,"に":2,"さん":3,"よん":4,"ご":5,"ろく":6,"なな":7,"はち":8,"きゅう":9,"ひと":1,"ふた":2,"one":1,"two":2,"three":3,"four":4,"five":5 };
   function quickParseOrder(text) {
-    // 質問・会話っぽい語があればHaikuに任せる
-    if (/[?？]|教えて|どう|何|なに|どこ|いくら|どんな|ある\?|ありますか|です|ハロー|こんにちは|ありがと|おすすめ|うまい|美味|まずい|やめ|キャンセル|変更|追加|やっぱ|削除/.test(text)) return null;
-    const numMap = { "一":1,"二":2,"三":3,"四":4,"五":5,"六":6,"七":7,"八":8,"九":9,"いち":1,"に":2,"さん":3,"よん":4,"ご":5,"ろく":6,"なな":7,"はち":8,"きゅう":9,"ひと":1,"ふた":2 };
+    if (STOP_WORDS_RE.test(text)) return null;
     const items = [];
     for (const m of window.MENU) {
-      const re = new RegExp(`(${m.nameJa}|${m.nameEn}|${m.id})[をのも]?\\s*(\\d+|[一二三四五六七八九]|ひと|ふた)?[本個つ]?`,"i");
+      const re = new RegExp(`(${m.nameJa}|${m.nameEn}|${m.id})[をのも]?\\s*(\\d+|[一二三四五六七八九]|ひと|ふた|one|two|three|four|five)?[本個つ]?`,"i");
       const match = text.match(re);
       if (match) {
         const q = match[2];
         let qty = 1;
-        if (q) { qty = /\d+/.test(q) ? Math.min(9,parseInt(q)) : (numMap[q] || 1); }
-        items.push({ id:m.id, qty });
+        if (q) qty = /\d+/.test(q) ? Math.min(9, parseInt(q)) : (NUM_MAP[q.toLowerCase()] || 1);
+        items.push({ id: m.id, qty });
       }
     }
     return items.length ? items : null;
@@ -1210,7 +1208,7 @@ function App() {
   async function parseWithHaiku(text) {
     // ① ローカル事前判定（API呼ばずに即時返す）
     const quick = quickParseOrder(text);
-    if (quick) { console.log("[quick] hit:", quick); return { type:"order", items: quick }; }
+    if (quick) return { type:"order", items: quick };
 
     const key = localStorage.getItem("ms_api_key");
     if (!key) {
@@ -1228,7 +1226,6 @@ function App() {
         }),
       });
       const data = await res.json();
-      if (data.usage) console.log("[Haiku home] usage:", data.usage);
       const raw = data.content?.[0]?.text || "";
       const match = raw.match(/\{[\s\S]*\}/);
       if (match) {
@@ -1293,12 +1290,10 @@ function App() {
         }),
       });
       const data = await res.json();
-      if (data.usage) console.log("[Haiku confirm] usage:", data.usage);
       const raw = data.content?.[0]?.text || "";
       const match = raw.match(/\{[\s\S]*\}/);
       if (match) {
         const parsed = JSON.parse(match[0]);
-        console.log("Haiku classify result:", parsed.type);
         if (parsed.type === "chat" && parsed.reply) {
           return { type:"chat", reply: parsed.reply };
         }

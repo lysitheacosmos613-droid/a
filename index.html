@@ -605,8 +605,8 @@ function HomeScreen({ t, transcript, isListening }) {
       const cellW = cr.width / GRID_N, cellH = cr.height / GRID_N;
       const x = cr.left - hr.left + col * cellW + cellW/2;
       const y = cr.top - hr.top + row * cellH + cellH/2;
-      const menuIds = ["milk","pancake","pudding","rusk","gelato"];
-      const type = menuIds[Math.floor(Math.random()*menuIds.length)];
+      const gameItems = ["⭐","💎","🪙","❤️","✨","🌟","🎁","🍒","🍓","🔔","💰","🌈"];
+      const type = gameItems[Math.floor(Math.random()*gameItems.length)];
       setFallingItems(prev => [...prev, {
         id: itemIdRef.current++,
         type, x, y,
@@ -625,20 +625,20 @@ function HomeScreen({ t, transcript, isListening }) {
       </div>
       {/* 落下アイテム */}
       <div style={{ position:"absolute", inset:0, zIndex:3, pointerEvents:"none", overflow:"hidden" }}>
-        {fallingItems.map(it => {
-          const m = window.MENU_MAP[it.type];
-          return (
-            <div key={it.id} style={{
-              position:"absolute",
-              left: it.x - 30, top: it.y - 30,
-              width:60, height:60,
-              transform:`rotate(${it.rot}deg)`,
-              willChange:"transform",
-            }}>
-              {m && <window.ProductIllustration item={m} size={60}/>}
-            </div>
-          );
-        })}
+        {fallingItems.map(it => (
+          <div key={it.id} style={{
+            position:"absolute",
+            left: it.x - 28, top: it.y - 28,
+            width:56, height:56,
+            display:"flex", alignItems:"center", justifyContent:"center",
+            fontSize:44,
+            transform:`rotate(${it.rot}deg)`,
+            filter:"drop-shadow(0 4px 8px rgba(0,0,0,0.15))",
+            willChange:"transform",
+          }}>
+            {it.type}
+          </div>
+        ))}
       </div>
       <div style={{ position:"relative", zIndex:2, textAlign:"center", maxWidth:1200, pointerEvents:"none" }}>
         <div className="mono" style={{ fontSize:18, color:"var(--mute)", letterSpacing:"0.32em" }}>WELCOME · {new Date().toLocaleDateString("ja-JP")}</div>

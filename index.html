@@ -825,6 +825,7 @@ function App() {
   const screenRef = useRef3("home");
   const orderItemsRef = useRef3([]);
   const orderQueueRef = useRef3([]);
+  const afterThankYouRef = useRef3([]); // ThankYou後に昇格するキュー
   const [apiKey, setApiKey] = useState3(() => localStorage.getItem("ms_api_key") || "");
   const [showKeyInput, setShowKeyInput] = useState3(false);
   const [parsing, setParsing] = useState3(false);
@@ -1022,15 +1023,11 @@ JSONのみ返してください（説明不要）:
     const nextId = String(parseInt(history[0]?.id||"0000")+1).padStart(4,"0");
     setHistory((p)=>[{id:nextId,minAgo:0,items:paying,status:"done"},...p]);
     setLastOrderId(nextId);
-    // キューに次の注文があれば昇格、なければホームへ
-    const nextQueue = orderQueueRef.current;
-    if (nextQueue.length > 0) {
-      setOrderItems(nextQueue[0]);
-      setOrderQueue(nextQueue.slice(1));
-    } else {
-      setOrderItems([]);
-      setShowThankYou(true);
-    }
+    // 残りキューを保存してから画面をリセット → ThankYou後に昇格
+    afterThankYouRef.current = orderQueueRef.current;
+    setOrderItems([]);
+    setOrderQueue([]);
+    setShowThankYou(true);
   }
 
   // orderItemsRef / orderQueueRef を常に最新に同期（closure問題回避）
@@ -1104,7 +1101,18 @@ JSONのみ返してください（説明不要）:
         {screen==="history"   && <window.HistoryScreen t={t} lang={lang} history={history}/>}
       </main>
 
-      {showThankYou && <window.ThankYouOverlay t={t} orderId={lastOrderId} onClose={()=>{setShowThankYou(false);setScreen("home");}}/>}
+      {showThankYou && <window.ThankYouOverlay t={t} orderId={lastOrderId} onClose={()=>{
+        setShowThankYou(false);
+        const next = afterThankYouRef.current;
+        if (next.length > 0) {
+          setOrderItems(next[0]);
+          setOrderQueue(next.slice(1));
+          afterThankYouRef.current = [];
+          setScreen("confirm");
+        } else {
+          setScreen("home");
+        }
+      }}/>}
 
       {/* 解析中オーバーレイ */}
       {parsing && (

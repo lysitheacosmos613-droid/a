@@ -505,7 +505,13 @@ function HomeScreen({ t, transcript, isListening }) {
   const [obstacles, setObstacles] = useState2([]);
   const [broken, setBroken] = useState2(new Set()); // 壊れたセル "i-k"
   const [fallingItems, setFallingItems] = useState2([]); // {id, type, x, y, vx, vy, rot, vrot}
+  const [particles, setParticles] = useState2([]); // {id, x, y, vx, vy, life, color}
+  const [score, setScore] = useState2(0);
+  const [combo, setCombo] = useState2(0);
+  const [comboFlash, setComboFlash] = useState2(0); // 表示制御
   const itemIdRef = useRef2(0);
+  const particleIdRef = useRef2(0);
+  const comboTimerRef = useRef2(null);
 
   const chars = (t.welcome || "").split("");
   const totalCells = chars.length * GRID_N * GRID_N;
@@ -518,30 +524,63 @@ function HomeScreen({ t, transcript, isListening }) {
     }
   }, [broken, totalCells]);
 
-  // アイテム落下アニメーション
+  // アイテム＆パーティクル落下アニメーション
   useEffect2(() => {
     let raf, last;
     const step = (t) => {
       if (!last) last = t;
       const dt = Math.min((t - last) / 1000, 0.05);
       last = t;
-      setFallingItems(prev => {
-        if (prev.length === 0) return prev;
-        return prev
-          .map(it => ({
-            ...it,
-            x: it.x + it.vx * dt,
-            y: it.y + it.vy * dt,
-            vy: it.vy + 1600 * dt,
-            rot: it.rot + it.vrot * dt,
-          }))
-          .filter(it => it.y < dim.h + 120);
-      });
+      setFallingItems(prev => prev.length === 0 ? prev : prev
+        .map(it => ({ ...it, x: it.x + it.vx * dt, y: it.y + it.vy * dt, vy: it.vy + 1600 * dt, rot: it.rot + it.vrot * dt }))
+        .filter(it => it.y < dim.h + 120));
+      setParticles(prev => prev.length === 0 ? prev : prev
+        .map(p => ({ ...p, x: p.x + p.vx * dt, y: p.y + p.vy * dt, vy: p.vy + 900 * dt, life: p.life - dt }))
+        .filter(p => p.life > 0));
       raf = requestAnimationFrame(step);
     };
     raf = requestAnimationFrame(step);
     return () => cancelAnimationFrame(raf);
   }, [dim.h]);
+
+  // コンボリセットタイマー
+  function bumpCombo() {
+    setCombo(c => {
+      const next = c + 1;
+      setComboFlash(Date.now());
+      clearTimeout(comboTimerRef.current);
+      comboTimerRef.current = setTimeout(() => setCombo(0), 1500);
+      return next;
+    });
+  }
+
+  // パーティクル発生
+  function spawnParticles(x, y, count = 8) {
+    const colors = ["#ff5b6e","#ffb800","#0047ff","#1f8a5b","#a855f7","#fb923c"];
+    const newOnes = Array.from({length: count}, () => ({
+      id: particleIdRef.current++,
+      x, y,
+      vx: (Math.random()-0.5) * 500,
+      vy: -150 - Math.random()*200,
+      life: 0.7 + Math.random()*0.4,
+      color: colors[Math.floor(Math.random()*colors.length)],
+      size: 6 + Math.random()*6,
+    }));
+    setParticles(prev => [...prev, ...newOnes]);
+  }
+
+  // アイテムをタップしてコレクト
+  function collectItem(itemId, pts = 100) {
+    setFallingItems(prev => {
+      const item = prev.find(it => it.id === itemId);
+      if (item) {
+        spawnParticles(item.x, item.y, 12);
+        bumpCombo();
+      }
+      return prev.filter(it => it.id !== itemId);
+    });
+    setScore(s => s + pts * Math.max(1, combo));
+  }
 
   useEffect2(() => {
     const el = heroRef.current;
@@ -615,6 +654,8 @@ function HomeScreen({ t, transcript, isListening }) {
         rot: (Math.random()-0.5)*60,
         vrot: (Math.random()-0.5)*420,
       }]);
+      // ブロック破壊パーティクル
+      spawnParticles(x, y, 6);
     }
   }
 
@@ -623,22 +664,60 @@ function HomeScreen({ t, transcript, isListening }) {
       <div style={{ position:"absolute", inset:0, zIndex:1 }}>
         <window.BouncingBall width={dim.w} height={dim.h} size={72} gravity={2400} restitution={0.92} bounces={6} startFrom="top-right" obstacles={obstacles} onObstacleHit={handleHit} />
       </div>
-      {/* 落下アイテム */}
+      {/* 落下アイテム（タップでコレクト） */}
       <div style={{ position:"absolute", inset:0, zIndex:3, pointerEvents:"none", overflow:"hidden" }}>
         {fallingItems.map(it => (
-          <div key={it.id} style={{
-            position:"absolute",
-            left: it.x - 28, top: it.y - 28,
-            width:56, height:56,
-            display:"flex", alignItems:"center", justifyContent:"center",
-            fontSize:44,
-            transform:`rotate(${it.rot}deg)`,
-            filter:"drop-shadow(0 4px 8px rgba(0,0,0,0.15))",
-            willChange:"transform",
-          }}>
+          <div
+            key={it.id}
+            onPointerDown={(e)=>{ e.stopPropagation(); collectItem(it.id); }}
+            style={{
+              position:"absolute",
+              left: it.x - 32, top: it.y - 32,
+              width:64, height:64,
+              display:"flex", alignItems:"center", justifyContent:"center",
+              fontSize:44,
+              transform:`rotate(${it.rot}deg)`,
+              filter:"drop-shadow(0 4px 8px rgba(0,0,0,0.15))",
+              willChange:"transform",
+              cursor:"pointer",
+              pointerEvents:"auto",
+              userSelect:"none",
+              touchAction:"none",
+            }}
+          >
             {it.type}
           </div>
         ))}
+      </div>
+
+      {/* パーティクル */}
+      <div style={{ position:"absolute", inset:0, zIndex:4, pointerEvents:"none", overflow:"hidden" }}>
+        {particles.map(p => (
+          <div key={p.id} style={{
+            position:"absolute",
+            left: p.x - p.size/2, top: p.y - p.size/2,
+            width: p.size, height: p.size,
+            background: p.color,
+            borderRadius:"50%",
+            opacity: Math.min(1, p.life * 1.5),
+            willChange:"transform, opacity",
+          }}/>
+        ))}
+      </div>
+
+      {/* スコア＆コンボ表示 */}
+      <div style={{ position:"absolute", top:24, left:32, zIndex:5, pointerEvents:"none" }}>
+        <div className="mono" style={{ fontSize:11, letterSpacing:"0.28em", color:"var(--mute)" }}>SCORE</div>
+        <div className="mono num" style={{ fontSize:36, fontWeight:700, color:"var(--ink)", lineHeight:1 }}>{score.toString().padStart(6,"0")}</div>
+        {combo >= 2 && (
+          <div key={comboFlash} style={{
+            marginTop:8, fontSize:24, fontWeight:700, color:"var(--blue)",
+            animation:"combo-pop .4s ease",
+          }}>
+            × {combo} COMBO!
+          </div>
+        )}
+        <style>{`@keyframes combo-pop { 0%{transform:scale(1.6); opacity:0;} 50%{transform:scale(1.1); opacity:1;} 100%{transform:scale(1); opacity:1;} }`}</style>
       </div>
       <div style={{ position:"relative", zIndex:2, textAlign:"center", maxWidth:1200, pointerEvents:"none" }}>
         <div className="mono" style={{ fontSize:18, color:"var(--mute)", letterSpacing:"0.32em" }}>WELCOME · {new Date().toLocaleDateString("ja-JP")}</div>

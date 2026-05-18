@@ -705,20 +705,6 @@ function HomeScreen({ t, transcript, isListening }) {
         ))}
       </div>
 
-      {/* スコア＆コンボ表示 */}
-      <div style={{ position:"absolute", top:24, left:32, zIndex:5, pointerEvents:"none" }}>
-        <div className="mono" style={{ fontSize:11, letterSpacing:"0.28em", color:"var(--mute)" }}>SCORE</div>
-        <div className="mono num" style={{ fontSize:36, fontWeight:700, color:"var(--ink)", lineHeight:1 }}>{score.toString().padStart(6,"0")}</div>
-        {combo >= 2 && (
-          <div key={comboFlash} style={{
-            marginTop:8, fontSize:24, fontWeight:700, color:"var(--blue)",
-            animation:"combo-pop .4s ease",
-          }}>
-            × {combo} COMBO!
-          </div>
-        )}
-        <style>{`@keyframes combo-pop { 0%{transform:scale(1.6); opacity:0;} 50%{transform:scale(1.1); opacity:1;} 100%{transform:scale(1); opacity:1;} }`}</style>
-      </div>
       <div style={{ position:"relative", zIndex:2, textAlign:"center", maxWidth:1200, pointerEvents:"none" }}>
         <div className="mono" style={{ fontSize:18, color:"var(--mute)", letterSpacing:"0.32em" }}>WELCOME · {new Date().toLocaleDateString("ja-JP")}</div>
         <h1 style={{ marginTop:36, fontSize:"clamp(88px, 9.5vw, 144px)", lineHeight:1.0, letterSpacing:"0.01em", fontWeight:500, whiteSpace:"nowrap", display:"inline-block" }}>

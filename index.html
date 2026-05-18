@@ -280,7 +280,7 @@ window.SAMPLE_HISTORY = SAMPLE_HISTORY;
   <script type="text/babel">
 const { useEffect, useRef } = React;
 
-function BouncingBall({ width = 600, height = 300, size = 48, gravity = 2000, restitution = 0.6, bounces = 6, startFrom = "top-left", progress = null, showTrail = true }) {
+function BouncingBall({ width = 600, height = 300, size = 48, gravity = 2000, restitution = 0.6, bounces = 6, startFrom = "top-left", progress = null, showTrail = true, obstacles = [] }) {
   const canvasRef = useRef(null);
   const animRef = useRef(null);
 
@@ -368,6 +368,26 @@ function BouncingBall({ width = 600, height = 300, size = 48, gravity = 2000, re
           if (y - r <= 0)      { y = r;           vy =  Math.abs(vy) * restitution; }
           if (bounceCount >= bounces && Math.abs(vy) < 40) { vy = -spd * 0.25 * restitution; bounceCount = 0; }
         }
+        // 障害物（文字など矩形）との衝突
+        for (const ob of obstacles) {
+          const cx = Math.max(ob.x, Math.min(x, ob.x + ob.w));
+          const cy = Math.max(ob.y, Math.min(y, ob.y + ob.h));
+          const dx = x - cx, dy = y - cy;
+          const distSq = dx*dx + dy*dy;
+          if (distSq < r*r && distSq > 0.001) {
+            const dist = Math.sqrt(distSq);
+            const nx = dx / dist, ny = dy / dist;
+            // 押し戻し
+            x = cx + nx * r;
+            y = cy + ny * r;
+            // 速度を法線方向に反射
+            const vn = vx * nx + vy * ny;
+            if (vn < 0) {
+              vx -= (1 + restitution) * vn * nx;
+              vy -= (1 + restitution) * vn * ny;
+            }
+          }
+        }
       }
 
       if (showTrail && !grabbed) { trail.push({ x, y }); if (trail.length > 28) trail.shift(); }
@@ -419,7 +439,7 @@ function BouncingBall({ width = 600, height = 300, size = 48, gravity = 2000, re
       canvas.removeEventListener("pointerup",    onUp);
       canvas.removeEventListener("pointercancel",onUp);
     };
-  }, [width, height, size, gravity, restitution, bounces, startFrom, progress, showTrail]);
+  }, [width, height, size, gravity, restitution, bounces, startFrom, progress, showTrail, JSON.stringify(obstacles)]);
 
   return <canvas ref={canvasRef} width={width} height={height} style={{ display:"block", maxWidth:"100%", touchAction:"none" }} />;
 }
@@ -473,33 +493,53 @@ const { useEffect: useEffect2, useState: useState2, useRef: useRef2 } = React;
 
 function HomeScreen({ t, transcript, isListening }) {
   const heroRef = useRef2(null);
+  const headRef = useRef2(null);
+  const subRef = useRef2(null);
+  const transcriptRef = useRef2(null);
   const [dim, setDim] = useState2({ w: 1280, h: 760 });
+  const [obstacles, setObstacles] = useState2([]);
+
   useEffect2(() => {
     const el = heroRef.current;
     if (!el) return;
-    const update = () => { const r = el.getBoundingClientRect(); setDim({ w: Math.max(600, Math.floor(r.width)), h: Math.max(400, Math.floor(r.height)) }); };
+    const update = () => {
+      const r = el.getBoundingClientRect();
+      setDim({ w: Math.max(600, Math.floor(r.width)), h: Math.max(400, Math.floor(r.height)) });
+      // 文字要素の位置を hero ローカル座標で取得して obstacles にする
+      const obs = [];
+      const collect = (ref, pad = 8) => {
+        if (!ref?.current) return;
+        const rr = ref.current.getBoundingClientRect();
+        obs.push({ x: rr.left - r.left - pad, y: rr.top - r.top - pad, w: rr.width + pad*2, h: rr.height + pad*2 });
+      };
+      collect(headRef, 6);
+      collect(subRef, 4);
+      if (transcriptRef.current) collect(transcriptRef, 8);
+      setObstacles(obs);
+    };
     update();
     const ro = new ResizeObserver(update);
     ro.observe(el);
     window.addEventListener("resize", update);
     return () => { ro.disconnect(); window.removeEventListener("resize", update); };
-  }, []);
+  }, [transcript]);
+
   return (
     <section data-screen-label="01 ホーム" ref={heroRef} style={{ position:"relative", minHeight:"calc(100vh - 72px - 88px)", overflow:"hidden", padding:"0 80px", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center" }}>
       <div style={{ position:"absolute", inset:0, zIndex:0, pointerEvents:"none" }}>
-        <window.BouncingBall width={dim.w} height={dim.h} size={56} gravity={2400} restitution={0.92} bounces={6} startFrom="top-right" />
+        <window.BouncingBall width={dim.w} height={dim.h} size={72} gravity={2400} restitution={0.92} bounces={6} startFrom="top-right" obstacles={obstacles} />
       </div>
-      <div style={{ position:"relative", zIndex:2, textAlign:"center", maxWidth:1000 }}>
-        <div className="mono" style={{ fontSize:11, color:"var(--mute)", letterSpacing:"0.32em" }}>WELCOME · {new Date().toLocaleDateString("ja-JP")}</div>
-        <h1 style={{ marginTop:30, fontSize:"clamp(64px, 7.2vw, 104px)", lineHeight:1.0, letterSpacing:"0.01em", fontWeight:500, whiteSpace:"nowrap" }}>{t.welcome}</h1>
-        <p style={{ marginTop:28, fontSize:18, color:"var(--mute)", lineHeight:1.7 }}>{t.welcomeSub}</p>
+      <div style={{ position:"relative", zIndex:2, textAlign:"center", maxWidth:1200 }}>
+        <div className="mono" style={{ fontSize:18, color:"var(--mute)", letterSpacing:"0.32em" }}>WELCOME · {new Date().toLocaleDateString("ja-JP")}</div>
+        <h1 ref={headRef} style={{ marginTop:36, fontSize:"clamp(88px, 9.5vw, 144px)", lineHeight:1.0, letterSpacing:"0.01em", fontWeight:500, whiteSpace:"nowrap", display:"inline-block" }}>{t.welcome}</h1>
+        <p ref={subRef} style={{ marginTop:32, fontSize:28, color:"var(--mute)", lineHeight:1.6, display:"inline-block" }}>{t.welcomeSub}</p>
         {/* 音声波形アニメ */}
-        <div style={{ marginTop:48, display:"flex", flexDirection:"column", alignItems:"center", gap:12 }}>
-          <div style={{ display:"flex", gap:5, alignItems:"center", height:40 }}>
+        <div style={{ marginTop:56, display:"flex", flexDirection:"column", alignItems:"center", gap:14 }}>
+          <div style={{ display:"flex", gap:6, alignItems:"center", height:56 }}>
             {[0.35,0.6,0.85,1.0,0.75,0.9,0.5,0.7,0.4].map((h,i) => (
               <div key={i} style={{
-                width:4, borderRadius:2,
-                height: `${h*40}px`,
+                width:5, borderRadius:3,
+                height: `${h*56}px`,
                 background: isListening ? "var(--blue)" : "var(--mute-2)",
                 animation: isListening ? `wave-bar ${0.5+i*0.07}s ease-in-out infinite alternate` : "none",
                 animationDelay: `${i*0.06}s`,
@@ -507,20 +547,20 @@ function HomeScreen({ t, transcript, isListening }) {
               }}/>
             ))}
           </div>
-          <div className="mono" style={{ fontSize:11, letterSpacing:"0.28em", color: isListening ? "var(--blue)" : "var(--mute)" }}>
+          <div className="mono" style={{ fontSize:16, letterSpacing:"0.28em", color: isListening ? "var(--blue)" : "var(--mute)" }}>
             {isListening ? "● LISTENING" : "● STANDBY"}
           </div>
         </div>
         <style>{`@keyframes wave-bar { from { transform: scaleY(0.25); } to { transform: scaleY(1); } }`}</style>
 
         {transcript ? (
-          <div style={{ marginTop:28, padding:"24px 40px", background:"rgba(255,255,255,0.7)", backdropFilter:"blur(8px)", border:"1px solid var(--line)", borderRadius:16, maxWidth:720, width:"100%" }}>
-            <div style={{ fontSize:26, fontWeight:500, lineHeight:1.6, color:"var(--ink)" }}>
-              「{transcript}<span style={{ display:"inline-block", width:2, height:22, background:"var(--blue)", verticalAlign:"middle", marginLeft:4 }}/>」
+          <div ref={transcriptRef} style={{ marginTop:36, padding:"28px 48px", background:"rgba(255,255,255,0.8)", backdropFilter:"blur(8px)", border:"1px solid var(--line)", borderRadius:20, maxWidth:900, width:"100%", display:"inline-block" }}>
+            <div style={{ fontSize:36, fontWeight:500, lineHeight:1.55, color:"var(--ink)" }}>
+              「{transcript}<span style={{ display:"inline-block", width:3, height:32, background:"var(--blue)", verticalAlign:"middle", marginLeft:6 }}/>」
             </div>
           </div>
         ) : (
-          <div className="mono" style={{ marginTop:28, fontSize:11, color:"var(--mute-2)", letterSpacing:"0.18em" }}>{t.examplePrompt}</div>
+          <div className="mono" style={{ marginTop:36, fontSize:18, color:"var(--mute-2)", letterSpacing:"0.18em" }}>{t.examplePrompt}</div>
         )}
       </div>
     </section>

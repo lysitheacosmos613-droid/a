@@ -280,9 +280,13 @@ window.SAMPLE_HISTORY = SAMPLE_HISTORY;
   <script type="text/babel">
 const { useEffect, useRef } = React;
 
-function BouncingBall({ width = 600, height = 300, size = 48, gravity = 2000, restitution = 0.6, bounces = 6, startFrom = "top-left", progress = null, showTrail = true, obstacles = [] }) {
+function BouncingBall({ width = 600, height = 300, size = 48, gravity = 2000, restitution = 0.6, bounces = 6, startFrom = "top-left", progress = null, showTrail = true, obstacles = [], onObstacleHit }) {
   const canvasRef = useRef(null);
   const animRef = useRef(null);
+  const obsRef = useRef(obstacles);
+  const hitCbRef = useRef(onObstacleHit);
+  useEffect(() => { obsRef.current = obstacles; }, [obstacles]);
+  useEffect(() => { hitCbRef.current = onObstacleHit; }, [onObstacleHit]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -369,7 +373,8 @@ function BouncingBall({ width = 600, height = 300, size = 48, gravity = 2000, re
           if (bounceCount >= bounces && Math.abs(vy) < 40) { vy = -spd * 0.25 * restitution; bounceCount = 0; }
         }
         // 障害物（文字など矩形）との衝突
-        for (const ob of obstacles) {
+        const obsList = obsRef.current || [];
+        for (const ob of obsList) {
           const cx = Math.max(ob.x, Math.min(x, ob.x + ob.w));
           const cy = Math.max(ob.y, Math.min(y, ob.y + ob.h));
           const dx = x - cx, dy = y - cy;
@@ -377,15 +382,14 @@ function BouncingBall({ width = 600, height = 300, size = 48, gravity = 2000, re
           if (distSq < r*r && distSq > 0.001) {
             const dist = Math.sqrt(distSq);
             const nx = dx / dist, ny = dy / dist;
-            // 押し戻し
             x = cx + nx * r;
             y = cy + ny * r;
-            // 速度を法線方向に反射
             const vn = vx * nx + vy * ny;
             if (vn < 0) {
               vx -= (1 + restitution) * vn * nx;
               vy -= (1 + restitution) * vn * ny;
             }
+            if (ob.id != null && hitCbRef.current) hitCbRef.current(ob.id);
           }
         }
       }
@@ -439,7 +443,7 @@ function BouncingBall({ width = 600, height = 300, size = 48, gravity = 2000, re
       canvas.removeEventListener("pointerup",    onUp);
       canvas.removeEventListener("pointercancel",onUp);
     };
-  }, [width, height, size, gravity, restitution, bounces, startFrom, progress, showTrail, JSON.stringify(obstacles)]);
+  }, [width, height, size, gravity, restitution, bounces, startFrom, progress, showTrail]);
 
   return <canvas ref={canvasRef} width={width} height={height} style={{ display:"block", maxWidth:"100%", touchAction:"none" }} />;
 }
@@ -493,11 +497,22 @@ const { useEffect: useEffect2, useState: useState2, useRef: useRef2 } = React;
 
 function HomeScreen({ t, transcript, isListening }) {
   const heroRef = useRef2(null);
-  const headRef = useRef2(null);
   const subRef = useRef2(null);
   const transcriptRef = useRef2(null);
+  const charRefs = useRef2([]);
   const [dim, setDim] = useState2({ w: 1280, h: 760 });
   const [obstacles, setObstacles] = useState2([]);
+  const [broken, setBroken] = useState2(new Set()); // 壊れた文字index
+
+  const chars = (t.welcome || "").split("");
+
+  // ブロック全壊で自動リセット
+  useEffect2(() => {
+    if (chars.length && broken.size >= chars.length) {
+      const id = setTimeout(() => setBroken(new Set()), 1500);
+      return () => clearTimeout(id);
+    }
+  }, [broken, chars.length]);
 
   useEffect2(() => {
     const el = heroRef.current;
@@ -505,16 +520,24 @@ function HomeScreen({ t, transcript, isListening }) {
     const update = () => {
       const r = el.getBoundingClientRect();
       setDim({ w: Math.max(600, Math.floor(r.width)), h: Math.max(400, Math.floor(r.height)) });
-      // 文字要素の位置を hero ローカル座標で取得して obstacles にする
       const obs = [];
-      const collect = (ref, pad = 8) => {
-        if (!ref?.current) return;
-        const rr = ref.current.getBoundingClientRect();
-        obs.push({ x: rr.left - r.left - pad, y: rr.top - r.top - pad, w: rr.width + pad*2, h: rr.height + pad*2 });
-      };
-      collect(headRef, 6);
-      collect(subRef, 4);
-      if (transcriptRef.current) collect(transcriptRef, 8);
+      // 各文字を個別のブロックとして登録
+      charRefs.current.forEach((node, i) => {
+        if (!node || broken.has(i)) return;
+        const rr = node.getBoundingClientRect();
+        const pad = 2;
+        obs.push({ id:`char-${i}`, x: rr.left - r.left - pad, y: rr.top - r.top - pad, w: rr.width + pad*2, h: rr.height + pad*2 });
+      });
+      // サブテキスト
+      if (subRef.current) {
+        const rr = subRef.current.getBoundingClientRect();
+        obs.push({ x: rr.left - r.left - 4, y: rr.top - r.top - 4, w: rr.width + 8, h: rr.height + 8 });
+      }
+      // transcript
+      if (transcriptRef.current) {
+        const rr = transcriptRef.current.getBoundingClientRect();
+        obs.push({ x: rr.left - r.left - 8, y: rr.top - r.top - 8, w: rr.width + 16, h: rr.height + 16 });
+      }
       setObstacles(obs);
     };
     update();
@@ -522,16 +545,42 @@ function HomeScreen({ t, transcript, isListening }) {
     ro.observe(el);
     window.addEventListener("resize", update);
     return () => { ro.disconnect(); window.removeEventListener("resize", update); };
-  }, [transcript]);
+  }, [transcript, broken]);
+
+  function handleHit(id) {
+    if (typeof id !== "string" || !id.startsWith("char-")) return;
+    const idx = parseInt(id.slice(5));
+    setBroken(prev => {
+      if (prev.has(idx)) return prev;
+      const next = new Set(prev); next.add(idx); return next;
+    });
+  }
 
   return (
     <section data-screen-label="01 ホーム" ref={heroRef} style={{ position:"relative", minHeight:"calc(100vh - 72px - 88px)", overflow:"hidden", padding:"0 80px", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center" }}>
       <div style={{ position:"absolute", inset:0, zIndex:1 }}>
-        <window.BouncingBall width={dim.w} height={dim.h} size={72} gravity={2400} restitution={0.92} bounces={6} startFrom="top-right" obstacles={obstacles} />
+        <window.BouncingBall width={dim.w} height={dim.h} size={72} gravity={2400} restitution={0.92} bounces={6} startFrom="top-right" obstacles={obstacles} onObstacleHit={handleHit} />
       </div>
       <div style={{ position:"relative", zIndex:2, textAlign:"center", maxWidth:1200, pointerEvents:"none" }}>
         <div className="mono" style={{ fontSize:18, color:"var(--mute)", letterSpacing:"0.32em" }}>WELCOME · {new Date().toLocaleDateString("ja-JP")}</div>
-        <h1 ref={headRef} style={{ marginTop:36, fontSize:"clamp(88px, 9.5vw, 144px)", lineHeight:1.0, letterSpacing:"0.01em", fontWeight:500, whiteSpace:"nowrap", display:"inline-block" }}>{t.welcome}</h1>
+        <h1 style={{ marginTop:36, fontSize:"clamp(88px, 9.5vw, 144px)", lineHeight:1.0, letterSpacing:"0.01em", fontWeight:500, whiteSpace:"nowrap", display:"inline-block" }}>
+          {chars.map((c, i) => {
+            const isBroken = broken.has(i);
+            return (
+              <span
+                key={i}
+                ref={node => charRefs.current[i] = node}
+                style={{
+                  display:"inline-block",
+                  transition:"opacity .4s, transform .4s",
+                  opacity: isBroken ? 0 : 1,
+                  transform: isBroken ? "scale(0.3) rotate(40deg)" : "scale(1)",
+                  pointerEvents:"none",
+                }}
+              >{c}</span>
+            );
+          })}
+        </h1>
         <p ref={subRef} style={{ marginTop:32, fontSize:28, color:"var(--mute)", lineHeight:1.6, display:"inline-block" }}>{t.welcomeSub}</p>
         {/* 音声波形アニメ */}
         <div style={{ marginTop:56, display:"flex", flexDirection:"column", alignItems:"center", gap:14 }}>

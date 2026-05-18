@@ -801,7 +801,62 @@ function ThankYouOverlay({ t, orderId, onClose }) {
   );
 }
 
-Object.assign(window, { HomeScreen, ListeningScreen, ConfirmScreen, ProductsScreen, CartScreen, HistoryScreen, ThankYouOverlay });
+function ApiTestButton() {
+  const { useState: useStateT, useCallback: useCallbackT } = React;
+  const [status, setStatus] = useStateT("idle"); // idle | loading | ok | error
+  const [msg, setMsg] = useStateT("");
+
+  const runTest = useCallbackT(async () => {
+    const key = localStorage.getItem("ms_api_key");
+    if (!key) { setStatus("error"); setMsg("APIキーが設定されていません"); return; }
+    setStatus("loading"); setMsg("テスト中...");
+    try {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": key,
+          "anthropic-version": "2023-06-01",
+          "anthropic-dangerous-direct-browser-access": "true",
+        },
+        body: JSON.stringify({
+          model: "claude-3-5-haiku-20241022",
+          max_tokens: 32,
+          messages: [{ role: "user", content: "「牛乳を2本」→ JSONのみ: " }]
+        }),
+      });
+      const data = await res.json();
+      if (data.error) {
+        setStatus("error");
+        setMsg("エラー: " + (data.error.message || JSON.stringify(data.error)));
+      } else {
+        const text = data.content?.[0]?.text || "";
+        setStatus("ok");
+        setMsg("✅ 動作確認OK\n返答: " + text);
+      }
+    } catch(e) {
+      setStatus("error");
+      setMsg("接続失敗: " + e.message);
+    }
+  }, []);
+
+  const bg = { idle:"var(--bg-3)", loading:"var(--bg-3)", ok:"#e6f4ee", error:"#fdecea" }[status];
+  const col = { idle:"var(--mute)", loading:"var(--mute)", ok:"var(--ok)", error:"var(--danger)" }[status];
+  return (
+    <div style={{ marginTop:10 }}>
+      <button onClick={runTest} disabled={status==="loading"} style={{ width:"100%", padding:"7px", borderRadius:7, background:"var(--blue-soft)", color:"var(--blue)", border:"1px solid var(--blue-soft)", fontSize:12, fontWeight:600, cursor:"pointer" }}>
+        {status==="loading" ? "テスト中..." : "🔌 接続テスト"}
+      </button>
+      {msg && (
+        <div style={{ marginTop:8, padding:"8px 10px", borderRadius:7, background:bg, color:col, fontSize:11, lineHeight:1.5, whiteSpace:"pre-wrap", wordBreak:"break-all" }}>
+          {msg}
+        </div>
+      )}
+    </div>
+  );
+}
+
+Object.assign(window, { HomeScreen, ListeningScreen, ConfirmScreen, ProductsScreen, CartScreen, HistoryScreen, ThankYouOverlay, ApiTestButton });
   </script>
 
   <!-- app -->
@@ -1095,7 +1150,7 @@ function App() {
               {apiKey ? "🔑 AI解析ON" : "🔑 APIキー"}
             </button>
             {showKeyInput && (
-              <div style={{ position:"absolute", right:0, top:"calc(100% + 8px)", zIndex:100, background:"#fff", border:"1px solid var(--line)", borderRadius:10, padding:14, boxShadow:"0 8px 24px rgba(0,0,0,.1)", width:300 }}>
+              <div style={{ position:"absolute", right:0, top:"calc(100% + 8px)", zIndex:100, background:"#fff", border:"1px solid var(--line)", borderRadius:10, padding:14, boxShadow:"0 8px 24px rgba(0,0,0,.1)", width:320 }}>
                 <div style={{ fontSize:12, fontWeight:600, marginBottom:8 }}>Anthropic APIキー</div>
                 <input
                   type="password"
@@ -1104,8 +1159,10 @@ function App() {
                   onChange={e=>{ const v=e.target.value; setApiKey(v); localStorage.setItem("ms_api_key",v); }}
                   style={{ width:"100%", padding:"7px 10px", borderRadius:7, border:"1px solid var(--line)", fontSize:13, outline:"none" }}
                 />
-                <div style={{ fontSize:11, color:"var(--mute)", marginTop:6 }}>キーはブラウザのlocalStorageに保存されます。設定するとClaude Haikuで音声を解析します。</div>
-                <button onClick={()=>setShowKeyInput(false)} style={{ marginTop:10, width:"100%", padding:"6px", borderRadius:7, background:"var(--ink)", color:"#fff", fontSize:13, cursor:"pointer" }}>閉じる</button>
+                <div style={{ fontSize:11, color:"var(--mute)", marginTop:6 }}>キーはlocalStorageに保存されます。</div>
+                {/* 接続テストボタン */}
+                <ApiTestButton />
+                <button onClick={()=>setShowKeyInput(false)} style={{ marginTop:8, width:"100%", padding:"6px", borderRadius:7, background:"var(--ink)", color:"#fff", fontSize:13, cursor:"pointer" }}>閉じる</button>
               </div>
             )}
           </div>

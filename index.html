@@ -268,13 +268,7 @@ const STRINGS = {
   },
 };
 
-const SAMPLE_HISTORY = [
-  { id: "0142", minAgo: 2,  items: [{ id: "milk", qty: 2 }, { id: "pudding", qty: 1 }], status: "ready" },
-  { id: "0141", minAgo: 6,  items: [{ id: "pancake", qty: 1 }, { id: "gelato", qty: 1 }], status: "done" },
-  { id: "0140", minAgo: 11, items: [{ id: "rusk", qty: 2 }, { id: "milk", qty: 1 }], status: "done" },
-  { id: "0139", minAgo: 18, items: [{ id: "gelato", qty: 2 }], status: "done" },
-  { id: "0138", minAgo: 24, items: [{ id: "pancake", qty: 2 }, { id: "milk", qty: 1 }], status: "done" },
-];
+const SAMPLE_HISTORY = [];
 
 window.MENU = MENU;
 window.MENU_MAP = MENU_MAP;
@@ -1025,7 +1019,7 @@ JSONのみ返してください（説明不要）:
 
   function handleComplete() {
     const paying = orderItems;
-    const nextId = String(parseInt(history[0]?.id||"0142")+1).padStart(4,"0");
+    const nextId = String(parseInt(history[0]?.id||"0000")+1).padStart(4,"0");
     setHistory((p)=>[{id:nextId,minAgo:0,items:paying,status:"ready"},...p]);
     setLastOrderId(nextId);
     // キューに次の注文があれば昇格、なければホームへ

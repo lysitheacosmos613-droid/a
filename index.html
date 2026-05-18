@@ -504,24 +504,44 @@ function HomeScreen({ t, transcript, isListening }) {
   const [dim, setDim] = useState2({ w: 1280, h: 760 });
   const [obstacles, setObstacles] = useState2([]);
   const [broken, setBroken] = useState2(new Set()); // 壊れたセル "i-k"
-  const [destroyCount, setDestroyCount] = useState2(0); // 全壊回数
+  const [fallingItems, setFallingItems] = useState2([]); // {id, type, x, y, vx, vy, rot, vrot}
+  const itemIdRef = useRef2(0);
 
-  // 3回全壊後は「おい、やめろ！」を表示
-  const displayText = destroyCount >= 3 ? "おい、やめろ！" : t.welcome;
-  const chars = (displayText || "").split("");
+  const chars = (t.welcome || "").split("");
   const totalCells = chars.length * GRID_N * GRID_N;
-  const isAngry = destroyCount >= 3;
 
-  // 全壊で自動リセット＆カウント増加
+  // 全壊で自動リセット
   useEffect2(() => {
     if (totalCells && broken.size >= totalCells) {
-      const id = setTimeout(() => {
-        setBroken(new Set());
-        setDestroyCount(c => c + 1);
-      }, 1500);
+      const id = setTimeout(() => setBroken(new Set()), 1500);
       return () => clearTimeout(id);
     }
   }, [broken, totalCells]);
+
+  // アイテム落下アニメーション
+  useEffect2(() => {
+    let raf, last;
+    const step = (t) => {
+      if (!last) last = t;
+      const dt = Math.min((t - last) / 1000, 0.05);
+      last = t;
+      setFallingItems(prev => {
+        if (prev.length === 0) return prev;
+        return prev
+          .map(it => ({
+            ...it,
+            x: it.x + it.vx * dt,
+            y: it.y + it.vy * dt,
+            vy: it.vy + 1600 * dt,
+            rot: it.rot + it.vrot * dt,
+          }))
+          .filter(it => it.y < dim.h + 120);
+      });
+      raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [dim.h]);
 
   useEffect2(() => {
     const el = heroRef.current;
@@ -569,16 +589,56 @@ function HomeScreen({ t, transcript, isListening }) {
   function handleHit(id) {
     if (typeof id !== "string" || !id.startsWith("cell-")) return;
     const key = id.slice(5);
+    if (broken.has(key)) return;
     setBroken(prev => {
       if (prev.has(key)) return prev;
       const next = new Set(prev); next.add(key); return next;
     });
+    // アイテムを落とす
+    const [charIdx, cellIdx] = key.split("-").map(Number);
+    const charNode = charRefs.current[charIdx];
+    const heroEl = heroRef.current;
+    if (charNode && heroEl) {
+      const cr = charNode.getBoundingClientRect();
+      const hr = heroEl.getBoundingClientRect();
+      const row = Math.floor(cellIdx / GRID_N), col = cellIdx % GRID_N;
+      const cellW = cr.width / GRID_N, cellH = cr.height / GRID_N;
+      const x = cr.left - hr.left + col * cellW + cellW/2;
+      const y = cr.top - hr.top + row * cellH + cellH/2;
+      const menuIds = ["milk","pancake","pudding","rusk","gelato"];
+      const type = menuIds[Math.floor(Math.random()*menuIds.length)];
+      setFallingItems(prev => [...prev, {
+        id: itemIdRef.current++,
+        type, x, y,
+        vx: (Math.random()-0.5) * 280,
+        vy: -120 - Math.random()*60,
+        rot: (Math.random()-0.5)*60,
+        vrot: (Math.random()-0.5)*420,
+      }]);
+    }
   }
 
   return (
     <section data-screen-label="01 ホーム" ref={heroRef} style={{ position:"relative", minHeight:"calc(100vh - 72px - 88px)", overflow:"hidden", padding:"0 80px", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center" }}>
       <div style={{ position:"absolute", inset:0, zIndex:1 }}>
         <window.BouncingBall width={dim.w} height={dim.h} size={72} gravity={2400} restitution={0.92} bounces={6} startFrom="top-right" obstacles={obstacles} onObstacleHit={handleHit} />
+      </div>
+      {/* 落下アイテム */}
+      <div style={{ position:"absolute", inset:0, zIndex:3, pointerEvents:"none", overflow:"hidden" }}>
+        {fallingItems.map(it => {
+          const m = window.MENU_MAP[it.type];
+          return (
+            <div key={it.id} style={{
+              position:"absolute",
+              left: it.x - 30, top: it.y - 30,
+              width:60, height:60,
+              transform:`rotate(${it.rot}deg)`,
+              willChange:"transform",
+            }}>
+              {m && <window.ProductIllustration item={m} size={60}/>}
+            </div>
+          );
+        })}
       </div>
       <div style={{ position:"relative", zIndex:2, textAlign:"center", maxWidth:1200, pointerEvents:"none" }}>
         <div className="mono" style={{ fontSize:18, color:"var(--mute)", letterSpacing:"0.32em" }}>WELCOME · {new Date().toLocaleDateString("ja-JP")}</div>
@@ -587,7 +647,7 @@ function HomeScreen({ t, transcript, isListening }) {
             <span
               key={i}
               ref={node => charRefs.current[i] = node}
-              style={{ position:"relative", display:"inline-block", pointerEvents:"none", color: isAngry ? "var(--danger)" : "var(--ink)" }}
+              style={{ position:"relative", display:"inline-block", pointerEvents:"none", color:"var(--ink)" }}
             >
               {/* サイズ確保用の透明な本体 */}
               <span style={{ visibility:"hidden" }}>{c}</span>

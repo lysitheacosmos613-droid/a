@@ -1389,7 +1389,7 @@ function App() {
               }
             }
             setTranscript("");
-            setTimeout(() => startVoice(), 400);
+            setTimeout(() => startVoice(), 1200);
           } else {
             // ホーム画面: 注文 or 会話
             const result = await parseWithHaiku(text);
@@ -1397,7 +1397,7 @@ function App() {
             if (result.type === "chat") {
               showClerk(result.reply);
               setTranscript("");
-              setTimeout(() => startVoice(), 400);
+              setTimeout(() => startVoice(), 1200);
             } else {
               setOrderItems(result.items);
               setScreen("confirm");
@@ -1420,7 +1420,7 @@ function App() {
       // _stopped=true は stopVoice() による意図的停止 → 再起動しない
       // _stopped=false は自然終了 → ホーム・確認画面なら再起動
       if (!rec._stopped && (screenRef.current === "home" || screenRef.current === "confirm")) {
-        setTimeout(() => startVoice(), 600);
+        setTimeout(() => startVoice(), 1200);
       }
     };
 
@@ -1460,7 +1460,7 @@ function App() {
   // ホーム・確認画面に入ったら自動で聴き始める
   useEffect3(() => {
     if (screen === "home" || screen === "confirm") {
-      const t = setTimeout(() => startVoice(), 400);
+      const t = setTimeout(() => startVoice(), 1500);
       return () => clearTimeout(t);
     }
   }, [screen]);

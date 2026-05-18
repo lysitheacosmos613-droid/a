@@ -888,42 +888,74 @@ function App() {
   const [apiKey, setApiKey] = useState3(() => localStorage.getItem("ms_api_key") || "");
   const [showKeyInput, setShowKeyInput] = useState3(false);
   const [parsing, setParsing] = useState3(false);
+  const [clerkReply, setClerkReply] = useState3(""); // 店員からの返答メッセージ
+  const clerkTimerRef = useRef3(null);
 
+  // テキストを音声で読み上げる
+  function speak(text) {
+    if (!text || !window.speechSynthesis) return;
+    try {
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = "ja-JP"; u.rate = 1.05; u.pitch = 1.1;
+      window.speechSynthesis.speak(u);
+    } catch(e) { console.warn("TTS error", e); }
+  }
+
+  // 店員メッセージを表示＆発話、5秒後に消える
+  function showClerk(reply) {
+    setClerkReply(reply);
+    speak(reply);
+    clearTimeout(clerkTimerRef.current);
+    clerkTimerRef.current = setTimeout(() => setClerkReply(""), 6000);
+  }
+
+  // ホーム画面: 注文 or 会話を判定
+  // 戻り値: { type:"order", items:[...] } または { type:"chat", reply:"..." }
   async function parseWithHaiku(text) {
     const key = localStorage.getItem("ms_api_key");
-    console.log("[Haiku] parseWithHaiku called, key:", key ? "SET" : "NOT SET", "text:", text);
-    if (!key) { console.log("[Haiku] no key → fallback"); return parseTranscript(text); }
+    if (!key) {
+      const items = parseTranscript(text);
+      return items.length ? { type:"order", items } : { type:"chat", reply:"あ、ちょっと聞き取れませんでした。もう一度どうぞ〜" };
+    }
     try {
       const res = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": key,
-          "anthropic-version": "2023-06-01",
-          "anthropic-dangerous-direct-browser-access": "true",
-        },
+        headers: { "Content-Type":"application/json", "x-api-key":key, "anthropic-version":"2023-06-01", "anthropic-dangerous-direct-browser-access":"true" },
         body: JSON.stringify({
           model: "claude-haiku-4-5-20251001",
-          max_tokens: 256,
+          max_tokens: 400,
           messages: [{ role: "user", content:
-`屋台の音声注文を解析してJSON配列のみ返してください。説明・コードブロック不要。
+`あなたはミルクスタンドのユーモアたっぷりな店員です。お客様の発話に応じてJSON1行で返答。
+
 メニュー: milk(牛乳), pancake(パンケーキ), pudding(プリン), rusk(ラスク), gelato(ジェラート)
-注文:「${text}」
-形式例: [{"id":"milk","qty":2},{"id":"pudding","qty":1}]` }]
+発話:「${text}」
+
+【判定】
+- メニュー注文 → {"type":"order","items":[{"id":"milk","qty":2}]}
+- メニュー外の会話・質問・雑談 → {"type":"chat","reply":"ユーモアのある2文以内の返答。フレンドリーで温かく、たまにボケる。語尾は柔らかく。"}
+
+例:
+「ハロー」→ {"type":"chat","reply":"いらっしゃいませ〜！今日も牛乳が冷えてますよ。何にしましょう？"}
+「お天気いいですね」→ {"type":"chat","reply":"ですよね〜こんな日はジェラートが格別ですよ。一個いっときます？"}
+「牛乳2本」→ {"type":"order","items":[{"id":"milk","qty":2}]}` }]
         }),
       });
       const data = await res.json();
-      console.log("[Haiku] parse response:", JSON.stringify(data));
       const raw = data.content?.[0]?.text || "";
-      const match = raw.match(/\[[\s\S]*\]/);
+      const match = raw.match(/\{[\s\S]*\}/);
       if (match) {
-        const items = JSON.parse(match[0]).filter(it => window.MENU_MAP[it.id] && it.qty > 0);
-        console.log("[Haiku] parsed items:", items);
-        if (items.length) return items;
+        const parsed = JSON.parse(match[0]);
+        if (parsed.type === "order") {
+          const items = (parsed.items||[]).filter(it => window.MENU_MAP[it.id] && it.qty > 0);
+          if (items.length) return { type:"order", items };
+        }
+        if (parsed.type === "chat" && parsed.reply) {
+          return { type:"chat", reply: parsed.reply };
+        }
       }
     } catch(e) { console.warn("[Haiku] parse error:", e); }
-    console.log("[Haiku] falling back to regex parse");
-    return parseTranscript(text);
+    return { type:"chat", reply:"ちょっと電波が悪いみたいで…もう一度お願いできます？" };
   }
 
   // 確認画面中の音声を「変更」か「新規注文」か判定して処理
@@ -943,25 +975,28 @@ function App() {
           model: "claude-haiku-4-5-20251001",
           max_tokens: 300,
           messages: [{ role:"user", content:
-`ミルクスタンドの注文システムです。JSON1行だけ返してください。説明不要。
+`あなたはミルクスタンドのユーモアたっぷりな店員。注文確認中のお客様の発話にJSON1行で対応。
 
 メニュー: milk=牛乳, pancake=パンケーキ, pudding=プリン, rusk=ラスク, gelato=ジェラート
 現在の注文: ${currentStr}
 音声:「${text}」
 
 【変更(modify)】現在の注文への修正:
-- 「〇〇キャンセル」「〇〇なしで」「〇〇削除」→ その商品をitemsから除外して返す
-- 「キャンセル」「全部キャンセル」「やっぱりいらない」→ items:[] で返す
-- 「〇〇追加」「〇〇も」→ 既存に加算して返す
-- 「〇〇を△個に」「〇〇△個」→ 数量を上書きして返す
-→ 出力: {"type":"modify","items":[変更後の全注文]}
+- 「〇〇キャンセル」「〇〇なしで」「〇〇削除」→ 除外
+- 「キャンセル」「全部キャンセル」「やっぱりいらない」→ items:[]
+- 「〇〇追加」「〇〇も」→ 既存に加算
+- 「〇〇を△個に」「〇〇△個」→ 数量を上書き
+→ {"type":"modify","items":[変更後の全注文]}
 
-【新規(new)】現在の注文と無関係な別人の注文:
-→ 出力: {"type":"new","items":[新しい注文]}
+【新規(new)】別人の注文（修正ワードなし）:
+→ {"type":"new","items":[新注文]}
+
+【会話(chat)】注文と無関係な発話・質問・雑談:
+→ {"type":"chat","reply":"ユーモアのある2文以内の返答"}
 
 例: 現在[milk×2]で「牛乳キャンセル」→ {"type":"modify","items":[]}
 例: 現在[milk×2]で「プリンもください」→ {"type":"modify","items":[{"id":"milk","qty":2},{"id":"pudding","qty":1}]}
-例: 現在[milk×2]で「パンケーキひとつ」→ {"type":"new","items":[{"id":"pancake","qty":1}]}` }]
+例: 現在[milk×2]で「ハロー」→ {"type":"chat","reply":"はい、ハロー！ご注文の追加とかありますか〜？"}` }]
         }),
       });
       const data = await res.json();
@@ -971,13 +1006,15 @@ function App() {
       const match = raw.match(/\{[\s\S]*\}/);
       if (match) {
         const parsed = JSON.parse(match[0]);
+        console.log("Haiku classify result:", parsed.type);
+        if (parsed.type === "chat" && parsed.reply) {
+          return { type:"chat", reply: parsed.reply };
+        }
         const items = (parsed.items||[]).filter(it=>window.MENU_MAP[it.id]&&it.qty>0);
-        console.log("Haiku classify result:", parsed.type, items);
         return { type: parsed.type === "modify" ? "modify" : "new", items };
       }
     } catch(e) { console.warn("Haiku classify error", e); }
-    // エラー時は新規注文として追加
-    return { type: "new", items: parseTranscript(text) };
+    return { type:"chat", reply:"あれ、ちょっと聞こえなくて…もう一度どうぞ〜" };
   }
 
   const t = window.STRINGS[lang];
@@ -1040,36 +1077,37 @@ function App() {
           stopVoice();
           setParsing(true);
           if (screenRef.current === "confirm") {
-            // 確認画面: 変更か新規かをHaikuで判定
+            // 確認画面: 変更/新規/会話をHaikuで判定
             const result = await classifyAndActWithHaiku(text, orderItemsRef.current);
             setParsing(false);
-            if (result.type === "modify") {
+            if (result.type === "chat") {
+              showClerk(result.reply);
+            } else if (result.type === "modify") {
               if (result.items.length === 0) {
-                // 全キャンセル → ホームへ戻る
                 setOrderItems([]);
                 setScreen("home");
+                showClerk("注文を全部キャンセルしますね〜！");
                 return;
               }
               setOrderItems(result.items);
             } else {
-              // 新規注文 → 空でなければキューに追加
               if (result.items.length > 0) {
                 setOrderQueue(q => [...q, result.items]);
+                showClerk("次のお客さんですね、順番に作りますね〜！");
               }
             }
             setTranscript("");
-            // 処理後に聴き取り再開（stopVoiceで止まっているため明示的に再起動）
             setTimeout(() => startVoice(), 400);
           } else {
-            // ホーム画面では新規注文として解析
-            const items = await parseWithHaiku(text);
+            // ホーム画面: 注文 or 会話
+            const result = await parseWithHaiku(text);
             setParsing(false);
-            if (items.length === 0) {
-              // メニュー外の発話 → 何もせず聞き取り続行
+            if (result.type === "chat") {
+              showClerk(result.reply);
               setTranscript("");
               setTimeout(() => startVoice(), 400);
             } else {
-              setOrderItems(items);
+              setOrderItems(result.items);
               setScreen("confirm");
             }
           }
@@ -1205,6 +1243,20 @@ function App() {
           setScreen("home");
         }
       }}/>}
+
+      {/* 店員吹き出し */}
+      {clerkReply && (
+        <div style={{ position:"fixed", bottom:32, left:"50%", transform:"translateX(-50%)", zIndex:150, maxWidth:560, padding:"18px 28px", background:"#fff", border:"1px solid var(--line)", borderRadius:20, boxShadow:"0 12px 40px rgba(0,0,0,.12)", animation:"clerk-pop .3s ease" }}>
+          <div style={{ display:"flex", alignItems:"flex-start", gap:14 }}>
+            <div style={{ fontSize:32, lineHeight:1 }}>👩‍🍳</div>
+            <div>
+              <div className="mono" style={{ fontSize:9, color:"var(--mute)", letterSpacing:"0.24em", marginBottom:4 }}>STAFF</div>
+              <div style={{ fontSize:16, lineHeight:1.55, color:"var(--ink)" }}>{clerkReply}</div>
+            </div>
+          </div>
+          <style>{`@keyframes clerk-pop { from { transform: translateX(-50%) translateY(20px); opacity:0; } to { transform: translateX(-50%) translateY(0); opacity:1; } }`}</style>
+        </div>
+      )}
 
       {/* 解析中オーバーレイ */}
       {parsing && (

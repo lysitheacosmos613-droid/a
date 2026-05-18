@@ -270,6 +270,7 @@ const STRINGS = {
 
 const SAMPLE_HISTORY = [];
 
+window.MENU_BASE = MENU;
 window.MENU = MENU;
 window.MENU_MAP = MENU_MAP;
 window.STRINGS = STRINGS;
@@ -476,7 +477,16 @@ function ProductIllustration({ item, size = 200 }) {
     rusk: <svg width={s} height={s} viewBox="0 0 200 200" style={{display:"block"}}><rect width="200" height="200" fill={bg}/>{[0,1,2,3,4].map((i)=><g key={i} transform={`translate(${46+i*20},${76+i*6})`}><rect x="0" y="0" width="70" height="86" rx="7" fill="#c89850"/><rect x="0" y="0" width="70" height="86" rx="7" fill="#e8c070" opacity="0.7"/><line x1="10" y1="22" x2="60" y2="22" stroke="#b08840" strokeWidth="1.2" opacity="0.5"/><line x1="10" y1="38" x2="60" y2="38" stroke="#b08840" strokeWidth="1.2" opacity="0.5"/><line x1="10" y1="54" x2="60" y2="54" stroke="#b08840" strokeWidth="1.2" opacity="0.5"/><line x1="10" y1="70" x2="60" y2="70" stroke="#b08840" strokeWidth="1.2" opacity="0.5"/></g>)}<ellipse cx="110" cy="174" rx="46" ry="6" fill="rgba(0,0,0,0.07)"/></svg>,
     gelato: <svg width={s} height={s} viewBox="0 0 200 200" style={{display:"block"}}><rect width="200" height="200" fill={bg}/><path d="M74 132 L126 132 L100 182 Z" fill="#d4a96a"/>{[0.25,0.5,0.75].map((t,i)=>{const ly=132+t*50,hw=(1-t)*26;return <line key={i} x1={100-hw} y1={ly} x2={100+hw} y2={ly} stroke="#c09050" strokeWidth="1" opacity="0.5"/>;})}<line x1="87" y1="132" x2="93" y2="182" stroke="#c09050" strokeWidth="1" opacity="0.45"/><line x1="113" y1="132" x2="107" y2="182" stroke="#c09050" strokeWidth="1" opacity="0.45"/><circle cx="100" cy="104" r="38" fill="#f4f4f4"/><circle cx="100" cy="104" r="38" fill="none" stroke="#e8e8e8" strokeWidth="1.5"/><circle cx="86" cy="88" r="11" fill="rgba(255,255,255,0.75)"/><path d="M78 134 Q72 144 76 152" stroke="#e8e8e8" strokeWidth="3.5" strokeLinecap="round" fill="none"/><ellipse cx="100" cy="182" rx="26" ry="5" fill="rgba(0,0,0,0.07)"/></svg>,
   };
-  return illus[item.id] || <svg width={s} height={s} viewBox="0 0 200 200" style={{display:"block"}}><rect width="200" height="200" fill={bg}/></svg>;
+  if (illus[item.id]) return illus[item.id];
+  // カスタム商品: emoji + 背景色
+  if (item.emoji) {
+    return (
+      <div style={{ width:s, height:s, background:bg, display:"flex", alignItems:"center", justifyContent:"center", fontSize:s*0.55, lineHeight:1, userSelect:"none" }}>
+        {item.emoji}
+      </div>
+    );
+  }
+  return <svg width={s} height={s} viewBox="0 0 200 200" style={{display:"block"}}><rect width="200" height="200" fill={bg}/></svg>;
 }
 
 const Icon = {
@@ -909,22 +919,91 @@ function ConfirmScreen({ t, lang, items, transcript, isListening, orderQueue, on
   );
 }
 
-function ProductsScreen({ t, lang, cart, onChange, onCheckout }) {
+function ProductsScreen({ t, lang, cart, onChange, onCheckout, onAddItem, onRemoveItem }) {
+  const { useState: useStateP } = React;
+  const [showAdd, setShowAdd] = useStateP(false);
+  const [form, setForm] = useStateP({ nameJa:"", nameEn:"", subJa:"", subEn:"", tickets:1, emoji:"🍰", swatch:"#ffe9d6" });
   const totalTickets = Object.entries(cart).reduce((s,[id,q])=>s+(window.MENU_MAP[id]?.tickets||0)*q,0);
   const itemCount = Object.values(cart).reduce((s,q)=>s+q,0);
+  const items = window.MENU;
+
+  function submit() {
+    if (!form.nameJa.trim() || form.tickets < 1) return;
+    onAddItem({ ...form, tickets: parseInt(form.tickets) || 1, nameEn: form.nameEn || form.nameJa, subJa: form.subJa || "", subEn: form.subEn || form.subJa || "" });
+    setForm({ nameJa:"", nameEn:"", subJa:"", subEn:"", tickets:1, emoji:"🍰", swatch:"#ffe9d6" });
+    setShowAdd(false);
+  }
+
+  const swatchOptions = ["#ffe9d6","#e6f4ee","#ecf0ff","#fce8ec","#f4e8fc","#fff4cc","#e0f4f8","#f0f0f0"];
+
   return (
     <section data-screen-label="04 商品一覧" style={{ padding:"48px 80px 40px" }}>
       <div style={{ display:"flex", alignItems:"flex-end", justifyContent:"space-between", marginBottom:32 }}>
         <div>
-          <div className="mono" style={{ fontSize:11, color:"var(--mute)", letterSpacing:"0.28em" }}>MENU / 5 ITEMS</div>
+          <div className="mono" style={{ fontSize:11, color:"var(--mute)", letterSpacing:"0.28em" }}>MENU / {items.length} ITEMS</div>
           <h1 style={{ marginTop:12, fontSize:48, fontWeight:500 }}>{t.products}</h1>
           <p style={{ marginTop:8, color:"var(--mute)" }}>{t.productsSub}</p>
         </div>
-        {itemCount>0 && <div style={{ display:"flex", alignItems:"center", gap:16 }}><div style={{ textAlign:"right" }}><div className="mono" style={{ fontSize:11, color:"var(--mute)", letterSpacing:"0.22em" }}>{itemCount} {t.item}</div><div className="mono num" style={{ fontSize:24, fontWeight:600, color:"var(--blue)" }}>◈ {totalTickets}</div></div><window.Button size="lg" onClick={onCheckout} icon={window.Icon.cart(16)}>{t.proceedPay}</window.Button></div>}
+        <div style={{ display:"flex", alignItems:"center", gap:16 }}>
+          <button onClick={()=>setShowAdd(true)} style={{ padding:"10px 18px", borderRadius:8, border:"1px dashed var(--mute-2)", background:"#fff", color:"var(--ink)", fontSize:13, fontWeight:600, cursor:"pointer" }}>
+            ＋ 商品追加
+          </button>
+          {itemCount>0 && <><div style={{ textAlign:"right" }}><div className="mono" style={{ fontSize:11, color:"var(--mute)", letterSpacing:"0.22em" }}>{itemCount} {t.item}</div><div className="mono num" style={{ fontSize:24, fontWeight:600, color:"var(--blue)" }}>◈ {totalTickets}</div></div><window.Button size="lg" onClick={onCheckout} icon={window.Icon.cart(16)}>{t.proceedPay}</window.Button></>}
+        </div>
       </div>
       <div style={{ display:"grid", gridTemplateColumns:"repeat(5, 1fr)", gap:16 }}>
-        {window.MENU.map((m)=><ProductCard key={m.id} t={t} lang={lang} item={m} qty={cart[m.id]||0} onChange={(v)=>onChange(m.id,v)}/>)}
+        {items.map((m)=>(
+          <div key={m.id} style={{ position:"relative" }}>
+            <ProductCard t={t} lang={lang} item={m} qty={cart[m.id]||0} onChange={(v)=>onChange(m.id,v)}/>
+            {m.id.startsWith("custom-") && (
+              <button onClick={()=>onRemoveItem(m.id)} title="削除" style={{ position:"absolute", top:8, right:8, zIndex:5, width:28, height:28, borderRadius:"50%", background:"rgba(255,255,255,0.95)", border:"1px solid var(--line)", color:"var(--danger)", fontSize:14, fontWeight:700, cursor:"pointer", boxShadow:"0 2px 6px rgba(0,0,0,0.08)" }}>×</button>
+            )}
+          </div>
+        ))}
       </div>
+
+      {/* 追加モーダル */}
+      {showAdd && (
+        <div style={{ position:"fixed", inset:0, zIndex:300, background:"rgba(0,0,0,0.4)", display:"flex", alignItems:"center", justifyContent:"center", padding:20 }} onClick={()=>setShowAdd(false)}>
+          <div onClick={e=>e.stopPropagation()} style={{ background:"#fff", borderRadius:16, padding:"32px 36px", maxWidth:480, width:"100%", boxShadow:"0 24px 60px rgba(0,0,0,0.2)" }}>
+            <div style={{ fontSize:20, fontWeight:600, marginBottom:18 }}>新しい商品を追加</div>
+            <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
+              <label style={{ display:"flex", flexDirection:"column", gap:6 }}>
+                <span style={{ fontSize:12, color:"var(--mute)" }}>絵文字（アイコン）</span>
+                <input value={form.emoji} onChange={e=>setForm({...form, emoji:e.target.value})} style={{ padding:"10px 12px", fontSize:24, textAlign:"center", borderRadius:8, border:"1px solid var(--line)", outline:"none" }}/>
+              </label>
+              <label style={{ display:"flex", flexDirection:"column", gap:6 }}>
+                <span style={{ fontSize:12, color:"var(--mute)" }}>名前（日本語）*</span>
+                <input value={form.nameJa} onChange={e=>setForm({...form, nameJa:e.target.value})} placeholder="例: チーズケーキ" style={{ padding:"9px 12px", fontSize:14, borderRadius:8, border:"1px solid var(--line)", outline:"none" }}/>
+              </label>
+              <label style={{ display:"flex", flexDirection:"column", gap:6 }}>
+                <span style={{ fontSize:12, color:"var(--mute)" }}>名前（英語）</span>
+                <input value={form.nameEn} onChange={e=>setForm({...form, nameEn:e.target.value})} placeholder="例: cheesecake" style={{ padding:"9px 12px", fontSize:14, borderRadius:8, border:"1px solid var(--line)", outline:"none" }}/>
+              </label>
+              <label style={{ display:"flex", flexDirection:"column", gap:6 }}>
+                <span style={{ fontSize:12, color:"var(--mute)" }}>説明（任意）</span>
+                <input value={form.subJa} onChange={e=>setForm({...form, subJa:e.target.value})} placeholder="例: 静岡産のクリームチーズ" style={{ padding:"9px 12px", fontSize:14, borderRadius:8, border:"1px solid var(--line)", outline:"none" }}/>
+              </label>
+              <label style={{ display:"flex", flexDirection:"column", gap:6 }}>
+                <span style={{ fontSize:12, color:"var(--mute)" }}>チケット数</span>
+                <input type="number" min="1" max="20" value={form.tickets} onChange={e=>setForm({...form, tickets:e.target.value})} style={{ padding:"9px 12px", fontSize:14, borderRadius:8, border:"1px solid var(--line)", outline:"none", width:120 }}/>
+              </label>
+              <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+                <span style={{ fontSize:12, color:"var(--mute)" }}>背景色</span>
+                <div style={{ display:"flex", gap:8 }}>
+                  {swatchOptions.map(c => (
+                    <button key={c} onClick={()=>setForm({...form, swatch:c})} style={{ width:32, height:32, borderRadius:8, background:c, border: form.swatch===c ? "2px solid var(--ink)" : "1px solid var(--line)", cursor:"pointer" }}/>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div style={{ display:"flex", gap:10, marginTop:24 }}>
+              <button onClick={()=>setShowAdd(false)} style={{ flex:1, padding:"11px", borderRadius:8, border:"1px solid var(--line)", background:"#fff", fontSize:14, cursor:"pointer" }}>キャンセル</button>
+              <button onClick={submit} disabled={!form.nameJa.trim()} style={{ flex:1, padding:"11px", borderRadius:8, border:"none", background:"var(--blue)", color:"#fff", fontSize:14, fontWeight:600, cursor:"pointer", opacity: form.nameJa.trim() ? 1 : 0.4 }}>追加する</button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
@@ -1157,6 +1236,30 @@ function App() {
   useEffect3(() => {
     try { localStorage.setItem("ms_history", JSON.stringify(history)); } catch(e) {}
   }, [history]);
+
+  // カスタムメニュー（追加商品）
+  const [customMenu, setCustomMenu] = useState3(() => {
+    try {
+      const saved = localStorage.getItem("ms_custom_menu");
+      if (saved) return JSON.parse(saved);
+    } catch(e) {}
+    return [];
+  });
+  useEffect3(() => {
+    try { localStorage.setItem("ms_custom_menu", JSON.stringify(customMenu)); } catch(e) {}
+    // window.MENU / MENU_MAP を再構築
+    const merged = [...window.MENU_BASE, ...customMenu];
+    window.MENU = merged;
+    window.MENU_MAP = Object.fromEntries(merged.map(m => [m.id, m]));
+  }, [customMenu]);
+
+  function addCustomItem(item) {
+    const id = `custom-${Date.now()}`;
+    setCustomMenu(prev => [...prev, { ...item, id }]);
+  }
+  function removeCustomItem(id) {
+    setCustomMenu(prev => prev.filter(m => m.id !== id));
+  }
   const [showThankYou, setShowThankYou]   = useState3(false);
   const [lastOrderId, setLastOrderId]     = useState3(null);
   const [orderQueue, setOrderQueue] = useState3([]); // 順番待ちリスト
@@ -1222,7 +1325,7 @@ function App() {
 ★言語ルール: お客様の発話言語と同じ言語で返答する。日本語→日本語、英語→英語。
 ★下ネタ対応: お酒の場なのでノリよくいなす。露骨にならず、ウィットでかわす。例: 牛乳→「胸」連想、プリン→揺れる、ジェラート→舐める、など。下品にならず、軽くツッコみつつ商品に話題を戻す。
 
-【当店メニュー】milk(牛乳), pancake(パンケーキ), pudding(プリン), rusk(ラスク), gelato(ジェラート)
+【当店メニュー】${window.MENU.map(m => `${m.id}(${m.nameJa})`).join(", ")}
 
 【会場の他出展者（聞かれたら案内）】
 ■ビール: AOI BREWING / 池田屋麦酒 / 193 VALLEY BREWING / West Coast Brewing / カケガワビール / GARCIA BREWING / 静岡醸造 / すごせる酒屋MUGI / 南信州ビール Ogna / Rough&Laugh Brewing
@@ -1286,7 +1389,7 @@ function App() {
 ★言語ルール: お客様の発話言語と同じ言語で返答する。日本語→日本語、英語→英語。
 ★下ネタ対応: お酒の場なのでノリよくいなす。露骨にならず、ウィットでかわす。下品にならず軽くツッコみつつ注文に話題を戻す。
 
-【当店メニュー】milk=牛乳, pancake=パンケーキ, pudding=プリン, rusk=ラスク, gelato=ジェラート
+【当店メニュー】${window.MENU.map(m => `${m.id}=${m.nameJa}`).join(", ")}
 
 【会場の他出展者（聞かれたら案内）】
 ■ビール: AOI BREWING / 池田屋麦酒 / 193 VALLEY BREWING / West Coast Brewing / カケガワビール / GARCIA BREWING / 静岡醸造 / すごせる酒屋MUGI / 南信州ビール Ogna / Rough&Laugh Brewing
@@ -1550,7 +1653,7 @@ function App() {
 
       <main style={{ flex:1 }}>
         {screen==="home"      && <window.HomeScreen t={t} transcript={transcript} isListening={isListening} />}
-        {screen==="products"  && <window.ProductsScreen t={t} lang={lang} cart={cart} onChange={handleCartChange} onCheckout={checkoutFromProducts}/>}
+        {screen==="products"  && <window.ProductsScreen t={t} lang={lang} cart={cart} onChange={handleCartChange} onCheckout={checkoutFromProducts} onAddItem={addCustomItem} onRemoveItem={removeCustomItem}/>}
         {screen==="confirm"   && <window.ConfirmScreen t={t} lang={lang} items={orderItems} transcript={transcript} isListening={isListening} orderQueue={orderQueue} onEdit={editConfirmItem} onComplete={handleComplete}/>}
         {screen==="cart"      && <window.CartScreen t={t} lang={lang} items={cartItems} onBack={()=>setScreen("products")} onPay={()=>{ setOrderItems(cartItems); handleComplete(); }}/>}
         {screen==="history"   && <window.HistoryScreen t={t} lang={lang} history={history} onClear={()=>setHistory([])}/>}

@@ -832,7 +832,8 @@ function App() {
 
   async function parseWithHaiku(text) {
     const key = localStorage.getItem("ms_api_key");
-    if (!key) return parseTranscript(text); // fallback
+    console.log("[Haiku] parseWithHaiku called, key:", key ? "SET" : "NOT SET", "text:", text);
+    if (!key) { console.log("[Haiku] no key → fallback"); return parseTranscript(text); }
     try {
       const res = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
@@ -843,7 +844,7 @@ function App() {
           "anthropic-dangerous-direct-browser-access": "true",
         },
         body: JSON.stringify({
-          model: "claude-haiku-4-5",
+          model: "claude-3-5-haiku-20241022",
           max_tokens: 256,
           messages: [{ role: "user", content:
 `屋台の音声注文を解析してJSON配列のみ返してください。説明・コードブロック不要。
@@ -853,14 +854,17 @@ function App() {
         }),
       });
       const data = await res.json();
+      console.log("[Haiku] parse response:", JSON.stringify(data));
       const raw = data.content?.[0]?.text || "";
       const match = raw.match(/\[[\s\S]*\]/);
       if (match) {
         const items = JSON.parse(match[0]).filter(it => window.MENU_MAP[it.id] && it.qty > 0);
+        console.log("[Haiku] parsed items:", items);
         if (items.length) return items;
       }
-    } catch(e) { console.warn("Haiku error", e); }
-    return parseTranscript(text); // fallback
+    } catch(e) { console.warn("[Haiku] parse error:", e); }
+    console.log("[Haiku] falling back to regex parse");
+    return parseTranscript(text);
   }
 
   // 確認画面中の音声を「変更」か「新規注文」か判定して処理
@@ -877,7 +881,7 @@ function App() {
         method: "POST",
         headers: { "Content-Type":"application/json", "x-api-key":key, "anthropic-version":"2023-06-01", "anthropic-dangerous-direct-browser-access":"true" },
         body: JSON.stringify({
-          model: "claude-haiku-4-5",
+          model: "claude-3-5-haiku-20241022",
           max_tokens: 300,
           messages: [{ role:"user", content:
 `ミルクスタンドの注文システムです。JSON1行だけ返してください。説明不要。

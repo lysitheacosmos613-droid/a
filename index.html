@@ -495,6 +495,7 @@ Object.assign(window, { BouncingBall, Button, Badge, QtyStepper, ProductIllustra
   <script type="text/babel">
 const { useEffect: useEffect2, useState: useState2, useRef: useRef2 } = React;
 
+const GRID_N = 4; // 各文字を NxN マスに分割
 function HomeScreen({ t, transcript, isListening }) {
   const heroRef = useRef2(null);
   const subRef = useRef2(null);
@@ -502,17 +503,18 @@ function HomeScreen({ t, transcript, isListening }) {
   const charRefs = useRef2([]);
   const [dim, setDim] = useState2({ w: 1280, h: 760 });
   const [obstacles, setObstacles] = useState2([]);
-  const [broken, setBroken] = useState2(new Set()); // 壊れた文字index
+  const [broken, setBroken] = useState2(new Set()); // 壊れたセル "i-k"
 
   const chars = (t.welcome || "").split("");
+  const totalCells = chars.length * GRID_N * GRID_N;
 
-  // ブロック全壊で自動リセット
+  // 全壊で自動リセット
   useEffect2(() => {
-    if (chars.length && broken.size >= chars.length) {
+    if (totalCells && broken.size >= totalCells) {
       const id = setTimeout(() => setBroken(new Set()), 1500);
       return () => clearTimeout(id);
     }
-  }, [broken, chars.length]);
+  }, [broken, totalCells]);
 
   useEffect2(() => {
     const el = heroRef.current;
@@ -521,19 +523,29 @@ function HomeScreen({ t, transcript, isListening }) {
       const r = el.getBoundingClientRect();
       setDim({ w: Math.max(600, Math.floor(r.width)), h: Math.max(400, Math.floor(r.height)) });
       const obs = [];
-      // 各文字を個別のブロックとして登録
+      // 各文字を NxN マスに分割して登録
       charRefs.current.forEach((node, i) => {
-        if (!node || broken.has(i)) return;
+        if (!node) return;
         const rr = node.getBoundingClientRect();
-        const pad = 2;
-        obs.push({ id:`char-${i}`, x: rr.left - r.left - pad, y: rr.top - r.top - pad, w: rr.width + pad*2, h: rr.height + pad*2 });
+        const cellW = rr.width / GRID_N, cellH = rr.height / GRID_N;
+        for (let row = 0; row < GRID_N; row++) {
+          for (let col = 0; col < GRID_N; col++) {
+            const k = row * GRID_N + col;
+            const key = `${i}-${k}`;
+            if (broken.has(key)) continue;
+            obs.push({
+              id: `cell-${key}`,
+              x: rr.left - r.left + col * cellW,
+              y: rr.top - r.top + row * cellH,
+              w: cellW, h: cellH,
+            });
+          }
+        }
       });
-      // サブテキスト
       if (subRef.current) {
         const rr = subRef.current.getBoundingClientRect();
         obs.push({ x: rr.left - r.left - 4, y: rr.top - r.top - 4, w: rr.width + 8, h: rr.height + 8 });
       }
-      // transcript
       if (transcriptRef.current) {
         const rr = transcriptRef.current.getBoundingClientRect();
         obs.push({ x: rr.left - r.left - 8, y: rr.top - r.top - 8, w: rr.width + 16, h: rr.height + 16 });
@@ -548,11 +560,11 @@ function HomeScreen({ t, transcript, isListening }) {
   }, [transcript, broken]);
 
   function handleHit(id) {
-    if (typeof id !== "string" || !id.startsWith("char-")) return;
-    const idx = parseInt(id.slice(5));
+    if (typeof id !== "string" || !id.startsWith("cell-")) return;
+    const key = id.slice(5);
     setBroken(prev => {
-      if (prev.has(idx)) return prev;
-      const next = new Set(prev); next.add(idx); return next;
+      if (prev.has(key)) return prev;
+      const next = new Set(prev); next.add(key); return next;
     });
   }
 
@@ -564,22 +576,31 @@ function HomeScreen({ t, transcript, isListening }) {
       <div style={{ position:"relative", zIndex:2, textAlign:"center", maxWidth:1200, pointerEvents:"none" }}>
         <div className="mono" style={{ fontSize:18, color:"var(--mute)", letterSpacing:"0.32em" }}>WELCOME · {new Date().toLocaleDateString("ja-JP")}</div>
         <h1 style={{ marginTop:36, fontSize:"clamp(88px, 9.5vw, 144px)", lineHeight:1.0, letterSpacing:"0.01em", fontWeight:500, whiteSpace:"nowrap", display:"inline-block" }}>
-          {chars.map((c, i) => {
-            const isBroken = broken.has(i);
-            return (
-              <span
-                key={i}
-                ref={node => charRefs.current[i] = node}
-                style={{
-                  display:"inline-block",
-                  transition:"opacity .4s, transform .4s",
-                  opacity: isBroken ? 0 : 1,
-                  transform: isBroken ? "scale(0.3) rotate(40deg)" : "scale(1)",
-                  pointerEvents:"none",
-                }}
-              >{c}</span>
-            );
-          })}
+          {chars.map((c, i) => (
+            <span
+              key={i}
+              ref={node => charRefs.current[i] = node}
+              style={{ position:"relative", display:"inline-block", pointerEvents:"none" }}
+            >
+              <span style={{ color:"var(--ink)" }}>{c}</span>
+              {/* ブロック格子オーバーレイ */}
+              <span style={{ position:"absolute", inset:0, display:"grid", gridTemplate:`repeat(${GRID_N}, 1fr) / repeat(${GRID_N}, 1fr)` }} aria-hidden>
+                {Array.from({length: GRID_N*GRID_N}).map((_, k) => {
+                  const isBroken = broken.has(`${i}-${k}`);
+                  return (
+                    <span key={k} style={{
+                      background: "var(--blue)",
+                      opacity: isBroken ? 0 : 0.78,
+                      transform: isBroken ? "scale(0) rotate(45deg)" : "scale(1)",
+                      transition: "opacity .35s, transform .35s",
+                      borderRight: "1px solid rgba(255,255,255,0.25)",
+                      borderBottom: "1px solid rgba(255,255,255,0.25)",
+                    }}/>
+                  );
+                })}
+              </span>
+            </span>
+          ))}
         </h1>
         <p ref={subRef} style={{ marginTop:32, fontSize:28, color:"var(--mute)", lineHeight:1.6, display:"inline-block" }}>{t.welcomeSub}</p>
         {/* 音声波形アニメ */}

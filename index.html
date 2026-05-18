@@ -1,0 +1,1009 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=1280, initial-scale=1" />
+  <title>MILK STAND — Voice Order</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&family=Inter:wght@400;500;600;700&display=swap"
+    rel="stylesheet"
+  />
+  <style>
+    :root {
+      --bg: #ffffff;
+      --bg-2: #fafafa;
+      --bg-3: #f4f4f4;
+      --ink: #0a0a0a;
+      --ink-2: #1a1a1a;
+      --mute: #767676;
+      --mute-2: #a8a8a8;
+      --line: #eaeaea;
+      --line-soft: #f0f0f0;
+      --blue: #0047ff;
+      --blue-ink: #0036c5;
+      --blue-soft: #ecf0ff;
+      --danger: #d83a3a;
+      --ok: #1f8a5b;
+      --radius: 10px;
+      --shadow-sm: 0 1px 0 rgba(10, 10, 10, 0.04);
+      --shadow-md: 0 8px 32px rgba(10, 10, 10, 0.06);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Noto Sans JP", "Inter", system-ui, sans-serif;
+      font-feature-settings: "palt";
+      -webkit-font-smoothing: antialiased;
+      letter-spacing: 0.01em;
+    }
+    button { font: inherit; color: inherit; background: none; border: none; cursor: pointer; letter-spacing: inherit; }
+    .mono { font-family: "DM Mono", "Inter", monospace; letter-spacing: 0.04em; }
+    .num { font-variant-numeric: tabular-nums; }
+    #root { min-height: 100%; }
+  </style>
+</head>
+<body style="background-color: rgb(255, 255, 247)">
+  <div id="root"></div>
+
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+  <!-- tweaks-panel -->
+  <script type="text/babel">
+const __TWEAKS_STYLE = `
+  .twk-panel{position:fixed;right:16px;bottom:16px;z-index:2147483646;width:280px;
+    max-height:calc(100vh - 32px);display:flex;flex-direction:column;
+    transform:scale(var(--dc-inv-zoom,1));transform-origin:bottom right;
+    background:rgba(250,249,247,.78);color:#29261b;
+    -webkit-backdrop-filter:blur(24px) saturate(160%);backdrop-filter:blur(24px) saturate(160%);
+    border:.5px solid rgba(255,255,255,.6);border-radius:14px;
+    box-shadow:0 1px 0 rgba(255,255,255,.5) inset,0 12px 40px rgba(0,0,0,.18);
+    font:11.5px/1.4 ui-sans-serif,system-ui,-apple-system,sans-serif;overflow:hidden}
+  .twk-hd{display:flex;align-items:center;justify-content:space-between;
+    padding:10px 8px 10px 14px;cursor:move;user-select:none}
+  .twk-hd b{font-size:12px;font-weight:600;letter-spacing:.01em}
+  .twk-x{appearance:none;border:0;background:transparent;color:rgba(41,38,27,.55);
+    width:22px;height:22px;border-radius:6px;cursor:default;font-size:13px;line-height:1}
+  .twk-x:hover{background:rgba(0,0,0,.06);color:#29261b}
+  .twk-body{padding:2px 14px 14px;display:flex;flex-direction:column;gap:10px;
+    overflow-y:auto;overflow-x:hidden;min-height:0;
+    scrollbar-width:thin;scrollbar-color:rgba(0,0,0,.15) transparent}
+  .twk-body::-webkit-scrollbar{width:8px}
+  .twk-body::-webkit-scrollbar-track{background:transparent;margin:2px}
+  .twk-body::-webkit-scrollbar-thumb{background:rgba(0,0,0,.15);border-radius:4px;
+    border:2px solid transparent;background-clip:content-box}
+  .twk-body::-webkit-scrollbar-thumb:hover{background:rgba(0,0,0,.25);
+    border:2px solid transparent;background-clip:content-box}
+  .twk-row{display:flex;flex-direction:column;gap:5px}
+  .twk-row-h{flex-direction:row;align-items:center;justify-content:space-between;gap:10px}
+  .twk-lbl{display:flex;justify-content:space-between;align-items:baseline;
+    color:rgba(41,38,27,.72)}
+  .twk-lbl>span:first-child{font-weight:500}
+  .twk-val{color:rgba(41,38,27,.5);font-variant-numeric:tabular-nums}
+  .twk-sect{font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+    color:rgba(41,38,27,.45);padding:10px 0 0}
+  .twk-sect:first-child{padding-top:0}
+  .twk-field{appearance:none;box-sizing:border-box;width:100%;min-width:0;height:26px;padding:0 8px;
+    border:.5px solid rgba(0,0,0,.1);border-radius:7px;
+    background:rgba(255,255,255,.6);color:inherit;font:inherit;outline:none}
+  .twk-field:focus{border-color:rgba(0,0,0,.25);background:rgba(255,255,255,.85)}
+  .twk-slider{appearance:none;-webkit-appearance:none;width:100%;height:4px;margin:6px 0;
+    border-radius:999px;background:rgba(0,0,0,.12);outline:none}
+  .twk-slider::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;
+    width:14px;height:14px;border-radius:50%;background:#fff;
+    border:.5px solid rgba(0,0,0,.12);box-shadow:0 1px 3px rgba(0,0,0,.2);cursor:default}
+  .twk-seg{position:relative;display:flex;padding:2px;border-radius:8px;
+    background:rgba(0,0,0,.06);user-select:none}
+  .twk-seg-thumb{position:absolute;top:2px;bottom:2px;border-radius:6px;
+    background:rgba(255,255,255,.9);box-shadow:0 1px 2px rgba(0,0,0,.12);
+    transition:left .15s cubic-bezier(.3,.7,.4,1),width .15s}
+  .twk-seg button{appearance:none;position:relative;z-index:1;flex:1;border:0;
+    background:transparent;color:inherit;font:inherit;font-weight:500;min-height:22px;
+    border-radius:6px;cursor:default;padding:4px 6px;line-height:1.2}
+  .twk-toggle{position:relative;width:32px;height:18px;border:0;border-radius:999px;
+    background:rgba(0,0,0,.15);transition:background .15s;cursor:default;padding:0}
+  .twk-toggle[data-on="1"]{background:#34c759}
+  .twk-toggle i{position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;
+    background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .15s}
+  .twk-toggle[data-on="1"] i{transform:translateX(14px)}
+  .twk-btn{appearance:none;height:26px;padding:0 12px;border:0;border-radius:7px;
+    background:rgba(0,0,0,.78);color:#fff;font:inherit;font-weight:500;cursor:default}
+  .twk-btn:hover{background:rgba(0,0,0,.88)}
+  .twk-btn.secondary{background:rgba(0,0,0,.06);color:inherit}
+`;
+
+function useTweaks(defaults) {
+  const [values, setValues] = React.useState(defaults);
+  const setTweak = React.useCallback((keyOrEdits, val) => {
+    const edits = typeof keyOrEdits === 'object' && keyOrEdits !== null
+      ? keyOrEdits : { [keyOrEdits]: val };
+    setValues((prev) => ({ ...prev, ...edits }));
+    window.parent.postMessage({ type: '__edit_mode_set_keys', edits }, '*');
+    window.dispatchEvent(new CustomEvent('tweakchange', { detail: edits }));
+  }, []);
+  return [values, setTweak];
+}
+
+function TweaksPanel({ title = 'Tweaks', children }) {
+  const [open, setOpen] = React.useState(false);
+  const dragRef = React.useRef(null);
+  const offsetRef = React.useRef({ x: 16, y: 16 });
+
+  React.useEffect(() => {
+    const onMsg = (e) => {
+      const t = e?.data?.type;
+      if (t === '__activate_edit_mode') setOpen(true);
+      else if (t === '__deactivate_edit_mode') setOpen(false);
+    };
+    window.addEventListener('message', onMsg);
+    window.parent.postMessage({ type: '__edit_mode_available' }, '*');
+    return () => window.removeEventListener('message', onMsg);
+  }, []);
+
+  const dismiss = () => {
+    setOpen(false);
+    window.parent.postMessage({ type: '__edit_mode_dismissed' }, '*');
+  };
+
+  if (!open) return null;
+  return (
+    <>
+      <style>{__TWEAKS_STYLE}</style>
+      <div ref={dragRef} className="twk-panel"
+           style={{ right: offsetRef.current.x, bottom: offsetRef.current.y }}>
+        <div className="twk-hd">
+          <b>{title}</b>
+          <button className="twk-x" onClick={dismiss}>✕</button>
+        </div>
+        <div className="twk-body">{children}</div>
+      </div>
+    </>
+  );
+}
+
+function TweakSection({ label, children }) {
+  return (<><div className="twk-sect">{label}</div>{children}</>);
+}
+function TweakSlider({ label, value, min = 0, max = 100, step = 1, unit = '', onChange }) {
+  return (
+    <div className="twk-row">
+      <div className="twk-lbl"><span>{label}</span><span className="twk-val">{value}{unit}</span></div>
+      <input type="range" className="twk-slider" min={min} max={max} step={step}
+             value={value} onChange={(e) => onChange(Number(e.target.value))} />
+    </div>
+  );
+}
+function TweakToggle({ label, value, onChange }) {
+  return (
+    <div className="twk-row twk-row-h">
+      <div className="twk-lbl"><span>{label}</span></div>
+      <button type="button" className="twk-toggle" data-on={value ? '1' : '0'}
+              onClick={() => onChange(!value)}><i /></button>
+    </div>
+  );
+}
+function TweakSelect({ label, value, options, onChange }) {
+  return (
+    <div className="twk-row">
+      <div className="twk-lbl"><span>{label}</span></div>
+      <select className="twk-field" value={value} onChange={(e) => onChange(e.target.value)}>
+        {options.map((o) => {
+          const v = typeof o === 'object' ? o.value : o;
+          const l = typeof o === 'object' ? o.label : o;
+          return <option key={v} value={v}>{l}</option>;
+        })}
+      </select>
+    </div>
+  );
+}
+function TweakButton({ label, onClick, secondary = false }) {
+  return (
+    <button type="button" className={secondary ? 'twk-btn secondary' : 'twk-btn'}
+            onClick={onClick}>{label}</button>
+  );
+}
+
+Object.assign(window, {
+  useTweaks, TweaksPanel, TweakSection,
+  TweakSlider, TweakToggle, TweakSelect, TweakButton,
+});
+  </script>
+
+  <!-- data -->
+  <script type="text/babel">
+const MENU = [
+  { id: "milk",    nameJa: "牛乳",       nameEn: "Fresh Milk", subJa: "瓶詰め・冷",    subEn: "Bottled, Cold",         tickets: 1, swatch: "#F4F1EA" },
+  { id: "pancake", nameJa: "パンケーキ", nameEn: "Pancake",    subJa: "発酵バター添え", subEn: "With cultured butter",  tickets: 3, swatch: "#F1E8D8" },
+  { id: "pudding", nameJa: "プリン",     nameEn: "Pudding",    subJa: "瓶入り・濃厚",  subEn: "Jarred, rich",          tickets: 2, swatch: "#F6E9C9" },
+  { id: "rusk",    nameJa: "ラスク",     nameEn: "Rusk",       subJa: "薄焼き・5枚",   subEn: "Thin, 5 pcs",           tickets: 2, swatch: "#EFE3CD" },
+  { id: "gelato",  nameJa: "ジェラート", nameEn: "Gelato",     subJa: "本日のフレーバー", subEn: "Today's flavor",      tickets: 2, swatch: "#EFEFEF" },
+];
+const MENU_MAP = Object.fromEntries(MENU.map((m) => [m.id, m]));
+
+const STRINGS = {
+  ja: {
+    brand: "MILK STAND", brandSub: "Voice Order System",
+    welcome: "いらっしゃいませ。", welcomeSub: "話しかけて、ご注文ください。",
+    tapStart: "画面をタップ、または「注文します」と話しかけてください",
+    listening: "お聞きしています", listeningSub: "ご注文をどうぞ", parsing: "確認しています",
+    confirm: "ご注文内容", confirmSub: "内容に間違いはございませんか？",
+    products: "商品一覧", productsSub: "タップしても注文できます",
+    cart: "お会計", cartSub: "チケットでお支払いいただきます",
+    ticket: "チケット", ticketSymbol: "◈",
+    history: "本日の注文履歴", historySub: "Today's orders",
+    voiceOrder: "音声で注文", manualOrder: "手動で選ぶ",
+    proceedPay: "お会計へ進む", payNow: "チケットで支払う",
+    cancel: "取り消す", back: "もどる", total: "合計",
+    waiting: "受付中", ready: "ご用意中", done: "お渡し済", paid: "お支払い済",
+    item: "点", thankYou: "ありがとうございました",
+    thankYouSub: "またのお越しをお待ちしております",
+    orderNo: "注文番号", now: "ただいま", minAgo: "分前",
+    examplePrompt: "例：「牛乳を2本と、プリンをひとつ」",
+    nav: { home: "ホーム", products: "商品", history: "履歴" },
+  },
+  en: {
+    brand: "MILK STAND", brandSub: "Voice Order System",
+    welcome: "Welcome.", welcomeSub: "Speak to place your order.",
+    tapStart: 'Tap the screen, or say "I\'d like to order"',
+    listening: "Listening", listeningSub: "Please go ahead", parsing: "Confirming",
+    confirm: "Your Order", confirmSub: "Is everything correct?",
+    products: "Menu", productsSub: "You can also tap to order",
+    cart: "Checkout", cartSub: "Paid with tickets",
+    ticket: "Ticket", ticketSymbol: "◈",
+    history: "Today's Orders", historySub: "本日の注文履歴",
+    voiceOrder: "Order by voice", manualOrder: "Pick manually",
+    proceedPay: "Proceed to pay", payNow: "Pay with tickets",
+    cancel: "Cancel", back: "Back", total: "Total",
+    waiting: "In queue", ready: "Preparing", done: "Served", paid: "Paid",
+    item: "items", thankYou: "Thank you very much",
+    thankYouSub: "We look forward to serving you again",
+    orderNo: "Order", now: "just now", minAgo: "min ago",
+    examplePrompt: 'e.g. "Two milks and one pudding, please."',
+    nav: { home: "Home", products: "Menu", history: "History" },
+  },
+};
+
+const SAMPLE_HISTORY = [
+  { id: "0142", minAgo: 2,  items: [{ id: "milk", qty: 2 }, { id: "pudding", qty: 1 }], status: "ready" },
+  { id: "0141", minAgo: 6,  items: [{ id: "pancake", qty: 1 }, { id: "gelato", qty: 1 }], status: "done" },
+  { id: "0140", minAgo: 11, items: [{ id: "rusk", qty: 2 }, { id: "milk", qty: 1 }], status: "done" },
+  { id: "0139", minAgo: 18, items: [{ id: "gelato", qty: 2 }], status: "done" },
+  { id: "0138", minAgo: 24, items: [{ id: "pancake", qty: 2 }, { id: "milk", qty: 1 }], status: "done" },
+];
+
+window.MENU = MENU;
+window.MENU_MAP = MENU_MAP;
+window.STRINGS = STRINGS;
+window.SAMPLE_HISTORY = SAMPLE_HISTORY;
+  </script>
+
+  <!-- components -->
+  <script type="text/babel">
+const { useEffect, useRef } = React;
+
+function BouncingBall({ width = 600, height = 300, size = 48, gravity = 2000, restitution = 0.6, bounces = 6, startFrom = "top-left", progress = null, showTrail = true }) {
+  const canvasRef = useRef(null);
+  const animRef = useRef(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    const r = size / 2;
+    const spd = Math.max(width, height) * 0.55;
+
+    let x, y, vx, vy;
+    if (startFrom === "top-right")     { x = width - r - 8; y = r + 8; vx = -spd * 0.45; vy = spd * 0.1; }
+    else if (startFrom === "top-left") { x = r + 8;         y = r + 8; vx =  spd * 0.45; vy = spd * 0.1; }
+    else                               { x = width * 0.5;   y = r + 8; vx =  spd * 0.35; vy = 0; }
+
+    const trail = [];
+    let lastTime = null, bounceCount = 0;
+
+    // ── ドラッグ状態 ──
+    let dragging = false, grabbed = false;
+    let dragVx = 0, dragVy = 0;
+    let lastDragX = 0, lastDragY = 0, lastDragTime = 0;
+
+    function canvasXY(e) {
+      const rect = canvas.getBoundingClientRect();
+      const sx = width / rect.width, sy = height / rect.height;
+      const src = e.touches ? e.touches[0] : e;
+      return { px: (src.clientX - rect.left) * sx, py: (src.clientY - rect.top) * sy };
+    }
+
+    function onDown(e) {
+      const { px, py } = canvasXY(e);
+      if (Math.hypot(px - x, py - y) > r + 24) return;
+      dragging = grabbed = true;
+      dragVx = dragVy = vx = vy = 0;
+      lastDragX = x = px; lastDragY = y = py;
+      lastDragTime = performance.now();
+      if (canvas.setPointerCapture && e.pointerId != null) canvas.setPointerCapture(e.pointerId);
+      canvas.style.cursor = "grabbing";
+      e.preventDefault();
+    }
+    function onMove(e) {
+      const { px, py } = canvasXY(e);
+      if (!dragging) {
+        canvas.style.cursor = Math.hypot(px - x, py - y) <= r + 24 ? "grab" : "default";
+        return;
+      }
+      const now = performance.now();
+      const dt = Math.max(0.001, (now - lastDragTime) / 1000);
+      dragVx = (px - lastDragX) / dt;
+      dragVy = (py - lastDragY) / dt;
+      lastDragX = x = px; lastDragY = y = py; lastDragTime = now;
+      e.preventDefault();
+    }
+    function onUp() {
+      if (!dragging) return;
+      dragging = grabbed = false;
+      // フリック速度を引き継ぐ（少し減衰）
+      vx = dragVx * 0.75; vy = dragVy * 0.75;
+      bounceCount = 0;
+      canvas.style.cursor = "default";
+    }
+
+    canvas.addEventListener("pointerdown",  onDown,  { passive: false });
+    canvas.addEventListener("pointermove",  onMove,  { passive: false });
+    canvas.addEventListener("pointerup",    onUp);
+    canvas.addEventListener("pointercancel",onUp);
+
+    function step(ts) {
+      if (!lastTime) lastTime = ts;
+      const dt = Math.min((ts - lastTime) / 1000, 0.05);
+      lastTime = ts;
+
+      if (!dragging) {
+        if (progress !== null) {
+          x = r + (width - size) * progress;
+          vy += gravity * dt; y += vy * dt;
+          if (y + r >= height) { y = height - r; vy = -Math.abs(vy) * restitution; }
+          if (y - r <= 0)      { y = r;           vy =  Math.abs(vy) * restitution; }
+        } else {
+          vy += gravity * dt; x += vx * dt; y += vy * dt;
+          if (x - r <= 0)      { x = r;          vx =  Math.abs(vx) * restitution; }
+          if (x + r >= width)  { x = width - r;  vx = -Math.abs(vx) * restitution; }
+          if (y + r >= height) { y = height - r; vy = -Math.abs(vy) * restitution; bounceCount++; }
+          if (y - r <= 0)      { y = r;           vy =  Math.abs(vy) * restitution; }
+          if (bounceCount >= bounces && Math.abs(vy) < 40) { vy = -spd * 0.25 * restitution; bounceCount = 0; }
+        }
+      }
+
+      if (showTrail && !grabbed) { trail.push({ x, y }); if (trail.length > 28) trail.shift(); }
+      else if (grabbed) trail.length = 0;
+
+      ctx.clearRect(0, 0, width, height);
+
+      // トレイル
+      if (showTrail && trail.length > 1) {
+        for (let i = 1; i < trail.length; i++) {
+          const frac = i / trail.length;
+          ctx.beginPath(); ctx.arc(trail[i].x, trail[i].y, r * frac * 0.72, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(0,71,255,${frac * 0.14})`; ctx.fill();
+        }
+      }
+
+      // 床の影（掴んでいないとき）
+      if (!grabbed) {
+        const distFrac = Math.max(0, 1 - y / height);
+        const sx = r * 0.9 * (1 - distFrac * 0.4), sy = r * 0.18 * (1 - distFrac * 0.4);
+        if (sx > 0 && sy > 0) {
+          ctx.beginPath(); ctx.ellipse(x, height - 3, sx, sy, 0, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(0,71,255,${0.14 * (1 - distFrac)})`; ctx.fill();
+        }
+      }
+
+      // 掴んでいるときのグロー
+      if (grabbed) {
+        ctx.beginPath(); ctx.arc(x, y, r * 1.6, 0, Math.PI * 2);
+        ctx.fillStyle = "rgba(0,71,255,0.10)"; ctx.fill();
+      }
+
+      // ボール本体（掴むと少し大きく）
+      const dr = grabbed ? r * 1.07 : r;
+      const grad = ctx.createRadialGradient(x - dr * 0.28, y - dr * 0.28, dr * 0.04, x, y, dr);
+      grad.addColorStop(0, "#5a8fff"); grad.addColorStop(1, "#0047ff");
+      ctx.beginPath(); ctx.arc(x, y, dr, 0, Math.PI * 2); ctx.fillStyle = grad; ctx.fill();
+      ctx.beginPath(); ctx.arc(x - dr * 0.26, y - dr * 0.26, dr * 0.22, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(255,255,255,0.35)"; ctx.fill();
+
+      animRef.current = requestAnimationFrame(step);
+    }
+
+    animRef.current = requestAnimationFrame(step);
+    return () => {
+      cancelAnimationFrame(animRef.current);
+      canvas.removeEventListener("pointerdown",  onDown);
+      canvas.removeEventListener("pointermove",  onMove);
+      canvas.removeEventListener("pointerup",    onUp);
+      canvas.removeEventListener("pointercancel",onUp);
+    };
+  }, [width, height, size, gravity, restitution, bounces, startFrom, progress, showTrail]);
+
+  return <canvas ref={canvasRef} width={width} height={height} style={{ display:"block", maxWidth:"100%", touchAction:"none" }} />;
+}
+
+function Button({ children, onClick, size = "md", variant = "solid", icon, full = false, disabled = false }) {
+  const pad = size === "lg" ? "11px 24px" : size === "sm" ? "5px 12px" : "8px 18px";
+  const fs  = size === "lg" ? 15 : size === "sm" ? 12 : 14;
+  const base = { display:"inline-flex", alignItems:"center", justifyContent:"center", gap:8, padding:pad, fontSize:fs, fontWeight:500, borderRadius:10, cursor:disabled?"not-allowed":"pointer", opacity:disabled?0.45:1, transition:"background .14s, color .14s, opacity .14s", width:full?"100%":undefined, border:"1.5px solid transparent", letterSpacing:"0.01em", whiteSpace:"nowrap" };
+  const styles = { solid:{background:"var(--blue)",color:"#fff",borderColor:"var(--blue)"}, outline:{background:"transparent",color:"var(--ink)",borderColor:"var(--line-soft)"}, ghost:{background:"transparent",color:"var(--mute)",borderColor:"transparent"} };
+  return <button onClick={disabled?undefined:onClick} style={{...base,...(styles[variant]||styles.solid)}}>{icon&&<span style={{display:"flex",alignItems:"center"}}>{icon}</span>}{children}</button>;
+}
+
+function Badge({ children, tone = "mute" }) {
+  const t = { blue:{bg:"var(--blue-soft)",color:"var(--blue-ink)"}, ok:{bg:"#e6f5ee",color:"var(--ok)"}, mute:{bg:"var(--bg-3)",color:"var(--mute)"} };
+  const s = t[tone]||t.mute;
+  return <span style={{display:"inline-flex",alignItems:"center",gap:5,padding:"3px 9px",borderRadius:6,fontSize:11,fontWeight:500,letterSpacing:"0.04em",background:s.bg,color:s.color,fontFamily:"'DM Mono',monospace"}}>{children}</span>;
+}
+
+function QtyStepper({ value = 0, onChange, min = 0, max = 99 }) {
+  const btn = (on) => ({ width:30,height:30,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,fontWeight:400,lineHeight:1,cursor:on?"pointer":"not-allowed",background:on?"var(--bg-3)":"var(--bg-2)",color:on?"var(--ink)":"var(--mute-2)",border:"1px solid var(--line)",transition:"background .12s",userSelect:"none" });
+  return <div style={{display:"inline-flex",alignItems:"center",gap:8}}><button onClick={()=>value>min&&onChange(value-1)} style={btn(value>min)}>−</button><span className="mono num" style={{minWidth:24,textAlign:"center",fontSize:15,fontWeight:600}}>{value}</span><button onClick={()=>value<max&&onChange(value+1)} style={btn(value<max)}>+</button></div>;
+}
+
+function ProductIllustration({ item, size = 200 }) {
+  const s = size, bg = item.swatch;
+  const illus = {
+    milk: <svg width={s} height={s} viewBox="0 0 200 200" style={{display:"block"}}><rect width="200" height="200" fill={bg}/><rect x="68" y="96" width="64" height="78" rx="10" fill="#fff"/><rect x="80" y="66" width="40" height="34" rx="6" fill="#fff"/><rect x="76" y="56" width="48" height="14" rx="7" fill="#d0cdc8"/><rect x="72" y="112" width="56" height="44" rx="5" fill="#f4efe8"/><text x="100" y="136" textAnchor="middle" fontSize="9" fontFamily="DM Mono,monospace" fill="#aaa" letterSpacing="2">MILK</text><text x="100" y="148" textAnchor="middle" fontSize="7" fontFamily="DM Mono,monospace" fill="#ccc" letterSpacing="1">STAND</text><rect x="74" y="100" width="7" height="32" rx="3.5" fill="rgba(255,255,255,0.7)"/><ellipse cx="100" cy="175" rx="28" ry="5" fill="rgba(0,0,0,0.06)"/></svg>,
+    pancake: <svg width={s} height={s} viewBox="0 0 200 200" style={{display:"block"}}><rect width="200" height="200" fill={bg}/><ellipse cx="100" cy="154" rx="58" ry="13" fill="#c89848"/><ellipse cx="100" cy="141" rx="58" ry="13" fill="#e8b860"/><ellipse cx="100" cy="128" rx="52" ry="12" fill="#c89848"/><ellipse cx="100" cy="116" rx="52" ry="12" fill="#e8b860"/><ellipse cx="100" cy="103" rx="46" ry="11" fill="#c89848"/><ellipse cx="100" cy="92" rx="46" ry="11" fill="#f0c878"/><rect x="82" y="83" width="36" height="14" rx="4" fill="#fff8e0" transform="rotate(-4,100,90)"/><path d="M134 105 Q140 122 136 136" stroke="#b07020" strokeWidth="4" strokeLinecap="round" fill="none"/><ellipse cx="100" cy="166" rx="40" ry="6" fill="rgba(0,0,0,0.07)"/></svg>,
+    pudding: <svg width={s} height={s} viewBox="0 0 200 200" style={{display:"block"}}><rect width="200" height="200" fill={bg}/><rect x="60" y="104" width="80" height="68" rx="10" fill="rgba(200,180,120,0.18)" stroke="#c8a048" strokeWidth="1.5"/><path d="M66 168 Q68 108 100 96 Q132 108 134 168 Z" fill="#f5d070"/><ellipse cx="100" cy="97" rx="32" ry="11" fill="#c8840a"/><rect x="56" y="98" width="88" height="12" rx="6" fill="#ddd"/><ellipse cx="80" cy="126" rx="6" ry="12" fill="rgba(255,255,255,0.45)" transform="rotate(-20,80,126)"/><ellipse cx="100" cy="172" rx="32" ry="5" fill="rgba(0,0,0,0.07)"/></svg>,
+    rusk: <svg width={s} height={s} viewBox="0 0 200 200" style={{display:"block"}}><rect width="200" height="200" fill={bg}/>{[0,1,2,3,4].map((i)=><g key={i} transform={`translate(${46+i*20},${76+i*6})`}><rect x="0" y="0" width="70" height="86" rx="7" fill="#c89850"/><rect x="0" y="0" width="70" height="86" rx="7" fill="#e8c070" opacity="0.7"/><line x1="10" y1="22" x2="60" y2="22" stroke="#b08840" strokeWidth="1.2" opacity="0.5"/><line x1="10" y1="38" x2="60" y2="38" stroke="#b08840" strokeWidth="1.2" opacity="0.5"/><line x1="10" y1="54" x2="60" y2="54" stroke="#b08840" strokeWidth="1.2" opacity="0.5"/><line x1="10" y1="70" x2="60" y2="70" stroke="#b08840" strokeWidth="1.2" opacity="0.5"/></g>)}<ellipse cx="110" cy="174" rx="46" ry="6" fill="rgba(0,0,0,0.07)"/></svg>,
+    gelato: <svg width={s} height={s} viewBox="0 0 200 200" style={{display:"block"}}><rect width="200" height="200" fill={bg}/><path d="M74 132 L126 132 L100 182 Z" fill="#d4a96a"/>{[0.25,0.5,0.75].map((t,i)=>{const ly=132+t*50,hw=(1-t)*26;return <line key={i} x1={100-hw} y1={ly} x2={100+hw} y2={ly} stroke="#c09050" strokeWidth="1" opacity="0.5"/>;})}<line x1="87" y1="132" x2="93" y2="182" stroke="#c09050" strokeWidth="1" opacity="0.45"/><line x1="113" y1="132" x2="107" y2="182" stroke="#c09050" strokeWidth="1" opacity="0.45"/><circle cx="100" cy="104" r="38" fill="#f4f4f4"/><circle cx="100" cy="104" r="38" fill="none" stroke="#e8e8e8" strokeWidth="1.5"/><circle cx="86" cy="88" r="11" fill="rgba(255,255,255,0.75)"/><path d="M78 134 Q72 144 76 152" stroke="#e8e8e8" strokeWidth="3.5" strokeLinecap="round" fill="none"/><ellipse cx="100" cy="182" rx="26" ry="5" fill="rgba(0,0,0,0.07)"/></svg>,
+  };
+  return illus[item.id] || <svg width={s} height={s} viewBox="0 0 200 200" style={{display:"block"}}><rect width="200" height="200" fill={bg}/></svg>;
+}
+
+const Icon = {
+  mic:   (sz=16) => <svg width={sz} height={sz} viewBox="0 0 16 16" fill="none" aria-hidden><rect x="5.25" y="1.25" width="5.5" height="8.5" rx="2.75" stroke="currentColor" strokeWidth="1.5"/><path d="M2.5 8.5C2.5 11.538 5 13.5 8 13.5s5.5-1.962 5.5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><line x1="8" y1="13.5" x2="8" y2="15.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>,
+  close: (sz=16) => <svg width={sz} height={sz} viewBox="0 0 16 16" fill="none" aria-hidden><line x1="3" y1="3" x2="13" y2="13" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/><line x1="13" y1="3" x2="3" y2="13" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/></svg>,
+  arrow: (sz=16) => <svg width={sz} height={sz} viewBox="0 0 16 16" fill="none" aria-hidden><path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+  back:  (sz=16) => <svg width={sz} height={sz} viewBox="0 0 16 16" fill="none" aria-hidden><path d="M13 8H3M7 12l-4-4 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+  cart:  (sz=16) => <svg width={sz} height={sz} viewBox="0 0 16 16" fill="none" aria-hidden><path d="M1.5 1.5h2l1.8 7.5h7l1.7-5H4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/><circle cx="7" cy="13.5" r="1.2" fill="currentColor"/><circle cx="11.5" cy="13.5" r="1.2" fill="currentColor"/></svg>,
+  check: (sz=16) => <svg width={sz} height={sz} viewBox="0 0 16 16" fill="none" aria-hidden><path d="M2.5 8.5l3.5 3.5 7.5-7.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+};
+
+Object.assign(window, { BouncingBall, Button, Badge, QtyStepper, ProductIllustration, Icon });
+  </script>
+
+  <!-- screens -->
+  <script type="text/babel">
+const { useEffect: useEffect2, useState: useState2, useRef: useRef2 } = React;
+
+function HomeScreen({ t, transcript, isListening }) {
+  const heroRef = useRef2(null);
+  const [dim, setDim] = useState2({ w: 1280, h: 760 });
+  useEffect2(() => {
+    const el = heroRef.current;
+    if (!el) return;
+    const update = () => { const r = el.getBoundingClientRect(); setDim({ w: Math.max(600, Math.floor(r.width)), h: Math.max(400, Math.floor(r.height)) }); };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    window.addEventListener("resize", update);
+    return () => { ro.disconnect(); window.removeEventListener("resize", update); };
+  }, []);
+  return (
+    <section data-screen-label="01 ホーム" ref={heroRef} style={{ position:"relative", minHeight:"calc(100vh - 72px - 88px)", overflow:"hidden", padding:"0 80px", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center" }}>
+      <div style={{ position:"absolute", inset:0, zIndex:0, pointerEvents:"none" }}>
+        <window.BouncingBall width={dim.w} height={dim.h} size={56} gravity={2400} restitution={0.92} bounces={6} startFrom="top-right" />
+      </div>
+      <div style={{ position:"relative", zIndex:2, textAlign:"center", maxWidth:1000 }}>
+        <div className="mono" style={{ fontSize:11, color:"var(--mute)", letterSpacing:"0.32em" }}>WELCOME · {new Date().toLocaleDateString("ja-JP")}</div>
+        <h1 style={{ marginTop:30, fontSize:"clamp(64px, 7.2vw, 104px)", lineHeight:1.0, letterSpacing:"0.01em", fontWeight:500, whiteSpace:"nowrap" }}>{t.welcome}</h1>
+        <p style={{ marginTop:28, fontSize:18, color:"var(--mute)", lineHeight:1.7 }}>{t.welcomeSub}</p>
+        {/* 音声波形アニメ */}
+        <div style={{ marginTop:48, display:"flex", flexDirection:"column", alignItems:"center", gap:12 }}>
+          <div style={{ display:"flex", gap:5, alignItems:"center", height:40 }}>
+            {[0.35,0.6,0.85,1.0,0.75,0.9,0.5,0.7,0.4].map((h,i) => (
+              <div key={i} style={{
+                width:4, borderRadius:2,
+                height: `${h*40}px`,
+                background: isListening ? "var(--blue)" : "var(--mute-2)",
+                animation: isListening ? `wave-bar ${0.5+i*0.07}s ease-in-out infinite alternate` : "none",
+                animationDelay: `${i*0.06}s`,
+                transition: "background .3s",
+              }}/>
+            ))}
+          </div>
+          <div className="mono" style={{ fontSize:11, letterSpacing:"0.28em", color: isListening ? "var(--blue)" : "var(--mute)" }}>
+            {isListening ? "● LISTENING" : "● STANDBY"}
+          </div>
+        </div>
+        <style>{`@keyframes wave-bar { from { transform: scaleY(0.25); } to { transform: scaleY(1); } }`}</style>
+
+        {transcript ? (
+          <div style={{ marginTop:28, padding:"24px 40px", background:"rgba(255,255,255,0.7)", backdropFilter:"blur(8px)", border:"1px solid var(--line)", borderRadius:16, maxWidth:720, width:"100%" }}>
+            <div style={{ fontSize:26, fontWeight:500, lineHeight:1.6, color:"var(--ink)" }}>
+              「{transcript}<span style={{ display:"inline-block", width:2, height:22, background:"var(--blue)", verticalAlign:"middle", marginLeft:4 }}/>」
+            </div>
+          </div>
+        ) : (
+          <div className="mono" style={{ marginTop:28, fontSize:11, color:"var(--mute-2)", letterSpacing:"0.18em" }}>{t.examplePrompt}</div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function ListeningScreen({ t, lang, transcript, parseProgress, isListening, onRetry, onCancel, onDone }) {
+  const targetLen = 24;
+  const progress = Math.min(1, (transcript || "").length / targetLen);
+  const state = parseProgress ? "parsing" : "listening";
+  return (
+    <section data-screen-label="02 音声入力" style={{ padding:"56px 80px 40px", minHeight:"calc(100vh - 72px - 88px)" }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
+        <div>
+          <div className="mono" style={{ fontSize:11, color:state==="listening"?"var(--blue)":"var(--ink)", letterSpacing:"0.28em" }}>● {state==="listening"?"LISTENING":"PARSING"}</div>
+          <h1 style={{ marginTop:14, fontSize:56, fontWeight:500, letterSpacing:"0.01em" }}>{state==="listening"?t.listening:t.parsing}</h1>
+          <p style={{ marginTop:10, color:"var(--mute)", fontSize:16 }}>{t.listeningSub}</p>
+        </div>
+        <window.Button variant="ghost" onClick={onCancel} icon={window.Icon.close(14)}>{t.cancel}</window.Button>
+      </div>
+      <div style={{ marginTop:60, marginBottom:40 }}>
+        <window.BouncingBall width={1080} height={220} size={42} gravity={2400} restitution={0.92} progress={progress} showTrail={false} />
+      </div>
+      <div style={{ display:"flex", justifyContent:"space-between", maxWidth:1080, margin:"0 auto" }}>
+        <span className="mono" style={{ fontSize:10, color:"var(--mute)", letterSpacing:"0.2em" }}>START</span>
+        <span className="mono" style={{ fontSize:10, color:progress>0.8?"var(--blue)":"var(--mute)", letterSpacing:"0.2em" }}>{Math.round(progress*100)}%</span>
+        <span className="mono" style={{ fontSize:10, color:"var(--mute)", letterSpacing:"0.2em" }}>ORDER</span>
+      </div>
+      <div style={{ marginTop:56, padding:"32px 40px", background:"var(--bg-2)", border:"1px solid var(--line)", borderRadius:12, minHeight:120, display:"flex", flexDirection:"column", justifyContent:"center" }}>
+        <div className="mono" style={{ fontSize:10, color:"var(--mute)", letterSpacing:"0.26em", marginBottom:12 }}>TRANSCRIPT</div>
+        <div style={{ fontSize:28, fontWeight:500, lineHeight:1.5, minHeight:42 }}>
+          {transcript ? <span>「{transcript}<span style={{ display:"inline-block", width:2, height:24, background:"var(--blue)", verticalAlign:"middle", marginLeft:4 }}/>」</span> : <span style={{ color:"var(--mute-2)" }}>{t.examplePrompt}</span>}
+        </div>
+      </div>
+      <div style={{ marginTop:32, display:"flex", justifyContent:"flex-end", gap:12, alignItems:"center" }}>
+        {isListening
+          ? <span className="mono" style={{ fontSize:11, color:"var(--blue)", letterSpacing:"0.2em" }}>● LISTENING</span>
+          : <span className="mono" style={{ fontSize:11, color:"var(--mute)", letterSpacing:"0.2em" }}>● STOPPED</span>}
+      </div>
+    </section>
+  );
+}
+
+function ConfirmScreen({ t, lang, items, transcript, onEdit, onBack, onConfirm }) {
+  const total = items.reduce((s, it) => s + window.MENU_MAP[it.id].tickets * it.qty, 0);
+  return (
+    <section data-screen-label="03 ご注文確認" style={{ padding:"48px 80px 40px" }}>
+      <div style={{ display:"flex", alignItems:"flex-end", justifyContent:"space-between", marginBottom:32 }}>
+        <div>
+          <div className="mono" style={{ fontSize:11, color:"var(--mute)", letterSpacing:"0.28em" }}>STEP 02 / 04</div>
+          <h1 style={{ marginTop:12, fontSize:48, fontWeight:500 }}>{t.confirm}</h1>
+          <p style={{ marginTop:8, color:"var(--mute)" }}>{t.confirmSub}</p>
+        </div>
+        {transcript && <div style={{ maxWidth:360, textAlign:"right" }}><div className="mono" style={{ fontSize:10, color:"var(--mute)", letterSpacing:"0.22em", marginBottom:6 }}>HEARD AS</div><div style={{ fontSize:13, color:"var(--ink-2)", lineHeight:1.6 }}>「{transcript}」</div></div>}
+      </div>
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 380px", gap:40 }}>
+        <div>
+          <div style={{ border:"1px solid var(--line)", borderRadius:12, overflow:"hidden" }}>
+            {items.map((it, idx) => {
+              const m = window.MENU_MAP[it.id], last = idx === items.length - 1;
+              return <div key={it.id} style={{ display:"grid", gridTemplateColumns:"80px 1fr auto auto", alignItems:"center", gap:24, padding:20, borderBottom:last?"none":"1px solid var(--line)" }}>
+                <div style={{ width:80, height:80, overflow:"hidden", borderRadius:8 }}><window.ProductIllustration item={m} size={80}/></div>
+                <div>
+                  <div style={{ fontSize:18, fontWeight:600 }}>{lang==="ja"?m.nameJa:m.nameEn}</div>
+                  <div style={{ fontSize:12, color:"var(--mute)", marginTop:4 }}>{lang==="ja"?m.subJa:m.subEn}</div>
+                  <div className="mono num" style={{ fontSize:12, color:"var(--mute)", marginTop:6 }}>◈ {m.tickets} × {it.qty}</div>
+                </div>
+                <window.QtyStepper value={it.qty} onChange={(v)=>onEdit(it.id,v)}/>
+                <div className="mono num" style={{ fontSize:18, fontWeight:600, minWidth:90, textAlign:"right" }}>◈ {m.tickets*it.qty}</div>
+              </div>;
+            })}
+            {items.length===0 && <div style={{ padding:40, textAlign:"center", color:"var(--mute)" }}>商品がありません</div>}
+          </div>
+        </div>
+        <aside style={{ background:"var(--bg-2)", border:"1px solid var(--line)", borderRadius:12, padding:28, alignSelf:"start" }}>
+          <div className="mono" style={{ fontSize:10, color:"var(--mute)", letterSpacing:"0.26em" }}>ORDER SUMMARY</div>
+          <div style={{ marginTop:18, display:"flex", justifyContent:"space-between", alignItems:"baseline" }}>
+            <span style={{ fontSize:13, color:"var(--mute)" }}>{lang==="ja"?"点数":"Items"}</span>
+            <span className="mono num" style={{ fontSize:14, fontWeight:500 }}>{items.reduce((a,b)=>a+b.qty,0)}</span>
+          </div>
+          <div style={{ height:1, background:"var(--line)", margin:"20px 0" }}/>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline" }}>
+            <span style={{ fontSize:13, fontWeight:600 }}>{t.total}</span>
+            <span className="mono num" style={{ fontSize:36, fontWeight:600, color:"var(--blue)" }}>◈ {total}</span>
+          </div>
+          <div style={{ marginTop:20, display:"flex", flexDirection:"column", gap:10 }}>
+            <window.Button full size="lg" onClick={onConfirm} icon={window.Icon.arrow(16)} disabled={items.length===0}>{t.proceedPay}</window.Button>
+            <window.Button full variant="outline" onClick={onBack} icon={window.Icon.back(14)}>{t.back}</window.Button>
+          </div>
+        </aside>
+      </div>
+    </section>
+  );
+}
+
+function ProductsScreen({ t, lang, cart, onChange, onCheckout }) {
+  const totalTickets = Object.entries(cart).reduce((s,[id,q])=>s+(window.MENU_MAP[id]?.tickets||0)*q,0);
+  const itemCount = Object.values(cart).reduce((s,q)=>s+q,0);
+  return (
+    <section data-screen-label="04 商品一覧" style={{ padding:"48px 80px 40px" }}>
+      <div style={{ display:"flex", alignItems:"flex-end", justifyContent:"space-between", marginBottom:32 }}>
+        <div>
+          <div className="mono" style={{ fontSize:11, color:"var(--mute)", letterSpacing:"0.28em" }}>MENU / 5 ITEMS</div>
+          <h1 style={{ marginTop:12, fontSize:48, fontWeight:500 }}>{t.products}</h1>
+          <p style={{ marginTop:8, color:"var(--mute)" }}>{t.productsSub}</p>
+        </div>
+        {itemCount>0 && <div style={{ display:"flex", alignItems:"center", gap:16 }}><div style={{ textAlign:"right" }}><div className="mono" style={{ fontSize:11, color:"var(--mute)", letterSpacing:"0.22em" }}>{itemCount} {t.item}</div><div className="mono num" style={{ fontSize:24, fontWeight:600, color:"var(--blue)" }}>◈ {totalTickets}</div></div><window.Button size="lg" onClick={onCheckout} icon={window.Icon.cart(16)}>{t.proceedPay}</window.Button></div>}
+      </div>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(5, 1fr)", gap:16 }}>
+        {window.MENU.map((m)=><ProductCard key={m.id} t={t} lang={lang} item={m} qty={cart[m.id]||0} onChange={(v)=>onChange(m.id,v)}/>)}
+      </div>
+    </section>
+  );
+}
+
+function ProductCard({ t, lang, item, qty, onChange }) {
+  const selected = qty > 0;
+  return (
+    <div style={{ background:"#fff", border:`1px solid ${selected?"var(--blue)":"var(--line)"}`, borderRadius:12, overflow:"hidden", boxShadow:selected?"0 0 0 3px var(--blue-soft)":"none" }}>
+      <div style={{ position:"relative", aspectRatio:"1/1" }}>
+        <window.ProductIllustration item={item} size={400}/>
+        <div style={{ position:"absolute", top:0, left:0, right:0, bottom:0 }}>
+          <div style={{ position:"absolute", top:12, left:12 }}><window.Badge tone="mute"><span style={{ width:4, height:4, borderRadius:"50%", background:selected?"var(--blue)":"var(--ink)" }}/>{item.id.toUpperCase()}</window.Badge></div>
+          {qty>0 && <div className="mono num" style={{ position:"absolute", top:12, right:12, background:"var(--blue)", color:"#fff", width:28, height:28, borderRadius:"50%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:13, fontWeight:700 }}>{qty}</div>}
+        </div>
+      </div>
+      <div style={{ padding:"16px 16px 14px" }}>
+        <div style={{ fontSize:16, fontWeight:600 }}>{lang==="ja"?item.nameJa:item.nameEn}</div>
+        <div style={{ fontSize:11, color:"var(--mute)", marginTop:4 }}>{lang==="ja"?item.subJa:item.subEn}</div>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginTop:14 }}>
+          <div className="mono num" style={{ fontSize:17, fontWeight:600, color:"var(--blue)" }}>◈ {item.tickets}</div>
+          <window.QtyStepper value={qty} onChange={onChange}/>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CartScreen({ t, lang, items, ticketBalance = 20, onBack, onPay }) {
+  const total = items.reduce((s,it)=>s+window.MENU_MAP[it.id].tickets*it.qty,0);
+  const remain = ticketBalance - total;
+  const insufficient = remain < 0;
+  return (
+    <section data-screen-label="05 お会計" style={{ padding:"48px 80px 40px" }}>
+      <div style={{ marginBottom:32 }}>
+        <div className="mono" style={{ fontSize:11, color:"var(--mute)", letterSpacing:"0.28em" }}>STEP 03 / 04</div>
+        <h1 style={{ marginTop:12, fontSize:48, fontWeight:500 }}>{t.cart}</h1>
+        <p style={{ marginTop:8, color:"var(--mute)" }}>{t.cartSub}</p>
+      </div>
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 420px", gap:40 }}>
+        <div>
+          <div style={{ border:"1px solid var(--line)", borderRadius:12, padding:24, marginBottom:24 }}>
+            <div className="mono" style={{ fontSize:10, color:"var(--mute)", letterSpacing:"0.26em", marginBottom:16 }}>YOUR ITEMS</div>
+            <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
+              {items.map((it)=>{const m=window.MENU_MAP[it.id];return <div key={it.id} style={{ display:"flex", alignItems:"center", gap:14 }}><div style={{ width:40, height:40, borderRadius:6, overflow:"hidden", flexShrink:0 }}><window.ProductIllustration item={m} size={40}/></div><div style={{ flex:1 }}><div style={{ fontSize:14, fontWeight:500 }}>{lang==="ja"?m.nameJa:m.nameEn}</div><div className="mono num" style={{ fontSize:11, color:"var(--mute)" }}>◈ {m.tickets} × {it.qty}</div></div><div className="mono num" style={{ fontSize:16, fontWeight:600 }}>◈ {m.tickets*it.qty}</div></div>;})}
+              {items.length===0 && <div style={{ padding:24, textAlign:"center", color:"var(--mute)" }}>カートに商品がありません</div>}
+            </div>
+          </div>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+            {[{label:lang==="ja"?"お手持ち":"BALANCE",value:`◈ ${ticketBalance}`,sub:lang==="ja"?"チケット残高":"your tickets",tone:"default"},{label:lang==="ja"?"ご使用後":"AFTER PAYMENT",value:`◈ ${Math.max(0,remain)}`,sub:insufficient?(lang==="ja"?"チケットが足りません":"insufficient"):(lang==="ja"?"予想残高":"expected balance"),tone:insufficient?"danger":"ok"}].map((tile,i)=>{
+              const c={default:{val:"var(--ink)",sub:"var(--mute)"},ok:{val:"var(--ink)",sub:"var(--ok)"},danger:{val:"var(--danger)",sub:"var(--danger)"}}[tile.tone];
+              return <div key={i} style={{ border:"1px solid var(--line)", borderRadius:10, padding:18, background:"#fff" }}><div className="mono" style={{ fontSize:10, color:"var(--mute)", letterSpacing:"0.28em" }}>{tile.label}</div><div className="mono num" style={{ fontSize:26, fontWeight:600, marginTop:8, color:c.val }}>{tile.value}</div><div style={{ fontSize:11, color:c.sub, marginTop:4 }}>{tile.sub}</div></div>;
+            })}
+          </div>
+        </div>
+        <aside style={{ background:"var(--bg-2)", border:"1px solid var(--line)", borderRadius:12, padding:28, alignSelf:"start" }}>
+          <div className="mono" style={{ fontSize:10, color:"var(--mute)", letterSpacing:"0.26em" }}>{t.total.toUpperCase()}</div>
+          <div style={{ display:"flex", alignItems:"baseline", gap:10, marginTop:6 }}>
+            <span style={{ fontSize:32, color:"var(--blue)", fontWeight:500 }}>◈</span>
+            <span className="mono num" style={{ fontSize:64, fontWeight:600, lineHeight:1, color:"var(--blue)" }}>{total}</span>
+          </div>
+          <div className="mono" style={{ fontSize:11, color:"var(--mute)", letterSpacing:"0.22em", marginTop:4 }}>{total} {t.ticket||"チケット"}</div>
+          <div style={{ height:1, background:"var(--line)", margin:"22px 0" }}/>
+          <div style={{ display:"flex", alignItems:"center", gap:12, padding:"14px 16px", background:"#fff", border:"1px solid var(--line)", borderRadius:10, marginBottom:16 }}>
+            <svg width="40" height="24" viewBox="0 0 40 24" aria-hidden><path d="M2 4 H38 V20 H2 Z M2 10 a2 2 0 0 1 0 4" fill="none" stroke="#0a0a0a" strokeWidth="1.4"/><path d="M38 10 a2 2 0 0 0 0 4" fill="none" stroke="#0a0a0a" strokeWidth="1.4"/><circle cx="20" cy="12" r="3.4" fill="#0047FF"/></svg>
+            <div style={{ flex:1 }}><div style={{ fontSize:13, fontWeight:600 }}>{lang==="ja"?"チケットで支払う":"Pay with Tickets"}</div><div className="mono" style={{ fontSize:10, color:"var(--mute)", letterSpacing:"0.2em", marginTop:2 }}>MILK STAND · TICKET ONLY</div></div>
+          </div>
+          <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+            <window.Button full size="lg" onClick={onPay} icon={window.Icon.check(16)} disabled={items.length===0||insufficient}>{t.payNow}</window.Button>
+            <window.Button full variant="ghost" onClick={onBack}>{t.back}</window.Button>
+          </div>
+        </aside>
+      </div>
+    </section>
+  );
+}
+
+function HistoryScreen({ t, lang, history }) {
+  const totalTickets = history.reduce((s,h)=>s+h.items.reduce((a,b)=>a+(window.MENU_MAP[b.id]?.tickets||0)*b.qty,0),0);
+  return (
+    <section data-screen-label="06 履歴" style={{ padding:"48px 80px 40px" }}>
+      <div style={{ marginBottom:32 }}>
+        <div className="mono" style={{ fontSize:11, color:"var(--mute)", letterSpacing:"0.28em" }}>{history.length} ORDERS · TODAY</div>
+        <h1 style={{ marginTop:12, fontSize:48, fontWeight:500 }}>{t.history}</h1>
+        <p style={{ marginTop:8, color:"var(--mute)" }}>{t.historySub}</p>
+      </div>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", border:"1px solid var(--line)", borderRadius:12, overflow:"hidden", marginBottom:32 }}>
+        {[{label:"ORDERS",value:history.length,color:"var(--ink)"},{label:"ITEMS",value:history.reduce((s,h)=>s+h.items.reduce((a,b)=>a+b.qty,0),0),color:"var(--ink)"},{label:"TICKETS",value:`◈ ${totalTickets}`,color:"var(--blue)"},{label:"AVG / ORDER",value:`◈ ${(totalTickets/Math.max(1,history.length)).toFixed(1)}`,color:"var(--ink)"}].map((k,i)=>(
+          <div key={i} style={{ padding:24, borderRight:i<3?"1px solid var(--line)":"none" }}><div className="mono" style={{ fontSize:10, color:"var(--mute)", letterSpacing:"0.28em" }}>{k.label}</div><div className="mono num" style={{ fontSize:32, fontWeight:600, marginTop:8, color:k.color }}>{k.value}</div></div>
+        ))}
+      </div>
+      <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+        {history.map((h)=>{
+          const tone=h.status==="ready"?"blue":"ok", label=h.status==="ready"?t.ready:t.done;
+          const total=h.items.reduce((s,it)=>s+(window.MENU_MAP[it.id]?.tickets||0)*it.qty,0);
+          return <div key={h.id} style={{ display:"grid", gridTemplateColumns:"100px 120px 1fr auto auto", alignItems:"center", gap:24, padding:"20px 24px", border:"1px solid var(--line)", borderRadius:10, background:"#fff" }}>
+            <div><div className="mono" style={{ fontSize:10, color:"var(--mute)", letterSpacing:"0.24em" }}>{t.orderNo}</div><div className="mono num" style={{ fontSize:18, fontWeight:600, marginTop:2 }}>#{h.id}</div></div>
+            <div><window.Badge tone={tone}>{label}</window.Badge><div className="mono" style={{ fontSize:11, color:"var(--mute)", marginTop:8 }}>{h.minAgo===0?t.now:`${h.minAgo} ${t.minAgo}`}</div></div>
+            <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>{h.items.map((it,i)=>{const m=window.MENU_MAP[it.id];return <span key={i} style={{ display:"inline-flex", alignItems:"center", gap:6, fontSize:12, padding:"5px 10px", background:"var(--bg-3)", borderRadius:6 }}><span style={{ width:14, height:14, borderRadius:3, overflow:"hidden", display:"inline-block" }}><window.ProductIllustration item={m} size={14}/></span>{lang==="ja"?m.nameJa:m.nameEn}{it.qty>1&&<span className="mono num" style={{ color:"var(--mute)" }}>×{it.qty}</span>}</span>;})}</div>
+            <div className="mono num" style={{ fontSize:18, fontWeight:600, color:"var(--blue)" }}>◈ {total}</div>
+            <window.Badge tone="mute">{t.paid}</window.Badge>
+          </div>;
+        })}
+      </div>
+    </section>
+  );
+}
+
+function ThankYouOverlay({ t, orderId, onClose }) {
+  useEffect2(() => { const id = setTimeout(onClose, 3500); return () => clearTimeout(id); }, [onClose]);
+  return (
+    <div style={{ position:"fixed", inset:0, background:"rgba(255,255,255,0.92)", backdropFilter:"blur(4px)", zIndex:100, display:"flex", alignItems:"center", justifyContent:"center" }} onClick={onClose}>
+      <div style={{ textAlign:"center" }}>
+        <div style={{ marginBottom:32 }}><window.BouncingBall width={520} height={160} size={32} gravity={2200} restitution={0.92} bounces={5}/></div>
+        <div className="mono" style={{ fontSize:11, color:"var(--mute)", letterSpacing:"0.32em" }}>ORDER #{orderId} · COMPLETE</div>
+        <h1 style={{ marginTop:18, fontSize:56, fontWeight:500, letterSpacing:"0.02em" }}>{t.thankYou}</h1>
+        <p style={{ marginTop:14, fontSize:16, color:"var(--mute)" }}>{t.thankYouSub}</p>
+      </div>
+    </div>
+  );
+}
+
+Object.assign(window, { HomeScreen, ListeningScreen, ConfirmScreen, ProductsScreen, CartScreen, HistoryScreen, ThankYouOverlay });
+  </script>
+
+  <!-- app -->
+  <script type="text/babel">
+const { useState: useState3, useCallback: useCallback3, useRef: useRef3, useEffect: useEffect3 } = React;
+
+function App() {
+  const [lang, setLang]                   = useState3("ja");
+  const [screen, setScreen]               = useState3("home");
+  const [cart, setCart]                   = useState3({});
+  const [orderItems, setOrderItems]       = useState3([]);
+  const [transcript, setTranscript]       = useState3("");
+  const [parseProgress, setParseProgress] = useState3(false);
+  const [history, setHistory]             = useState3(window.SAMPLE_HISTORY);
+  const [showThankYou, setShowThankYou]   = useState3(false);
+  const [lastOrderId, setLastOrderId]     = useState3(null);
+  const [ticketBalance, setTicketBalance] = useState3(20);
+  const recRef = useRef3(null);
+  const [isListening, setIsListening] = useState3(false);
+  const silenceRef = useRef3(null);
+  const screenRef = useRef3("home");
+  const [apiKey, setApiKey] = useState3(() => localStorage.getItem("ms_api_key") || "");
+  const [showKeyInput, setShowKeyInput] = useState3(false);
+  const [parsing, setParsing] = useState3(false);
+
+  async function parseWithHaiku(text) {
+    const key = localStorage.getItem("ms_api_key");
+    if (!key) return parseTranscript(text); // fallback
+    try {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": key,
+          "anthropic-version": "2023-06-01",
+          "anthropic-dangerous-direct-browser-access": "true",
+        },
+        body: JSON.stringify({
+          model: "claude-haiku-4-5",
+          max_tokens: 256,
+          messages: [{ role: "user", content:
+`屋台の音声注文を解析してJSON配列のみ返してください。説明・コードブロック不要。
+メニュー: milk(牛乳), pancake(パンケーキ), pudding(プリン), rusk(ラスク), gelato(ジェラート)
+注文:「${text}」
+形式例: [{"id":"milk","qty":2},{"id":"pudding","qty":1}]` }]
+        }),
+      });
+      const data = await res.json();
+      const raw = data.content?.[0]?.text || "";
+      const match = raw.match(/\[[\s\S]*?\]/);
+      if (match) {
+        const items = JSON.parse(match[0]).filter(it => window.MENU_MAP[it.id] && it.qty > 0);
+        if (items.length) return items;
+      }
+    } catch(e) { console.warn("Haiku error", e); }
+    return parseTranscript(text); // fallback
+  }
+
+  const t = window.STRINGS[lang];
+  const cartItems = Object.entries(cart).filter(([,qty])=>qty>0).map(([id,qty])=>({id,qty}));
+  const cartCount = cartItems.reduce((s,it)=>s+it.qty,0);
+
+  function stopVoice() {
+    clearTimeout(silenceRef.current);
+    if (recRef.current) {
+      recRef.current._stopped = true;
+      try { recRef.current.stop(); } catch(e) {}
+      recRef.current = null;
+    }
+    setIsListening(false);
+  }
+
+  const startVoice = useCallback3(() => {
+    setTranscript(""); setParseProgress(false);
+
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) {
+      // フォールバック：シミュレーション
+      const phrases = ["牛乳を2本と、プリンをひとつ","パンケーキひとつください","ジェラートを2つとラスクをひとつ"];
+      const phrase = phrases[Math.floor(Math.random()*phrases.length)];
+      let i = 0;
+      const timer = setInterval(() => {
+        i++; setTranscript(phrase.slice(0,i));
+        if (i >= phrase.length) {
+          clearInterval(timer);
+          setTimeout(()=>{ setParseProgress(true); setTimeout(()=>{ setOrderItems(parseTranscript(phrase)); setParseProgress(false); setScreen("confirm"); },800); },500);
+        }
+      },60);
+      return;
+    }
+
+    const rec = new SR();
+    rec.lang = lang === "en" ? "en-US" : "ja-JP";
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec._stopped = false;
+    recRef.current = rec;
+
+    rec.onresult = (e) => {
+      let text = "";
+      for (let i = 0; i < e.results.length; i++) {
+        text += e.results[i][0].transcript;
+      }
+      setTranscript(text);
+      // 1.5秒の無音で自動確定
+      clearTimeout(silenceRef.current);
+      if (text.trim()) {
+        silenceRef.current = setTimeout(async () => {
+          stopVoice();
+          setParsing(true);
+          const items = await parseWithHaiku(text);
+          setParsing(false);
+          setOrderItems(items);
+          setScreen("confirm");
+        }, 1500);
+      }
+    };
+
+    rec.onerror = (e) => {
+      if (e.error === "not-allowed") {
+        alert("マイクの使用が許可されていません。ブラウザの設定を確認してください。");
+        stopVoice(); setScreen("home");
+      }
+    };
+
+    rec.onend = () => {
+      if (recRef.current === rec) {
+        recRef.current = null;
+        setIsListening(false);
+        // ホーム画面なら自動再起動（常時リスニング）
+        if (screenRef.current === "home") {
+          setTimeout(() => startVoice(), 600);
+        }
+      }
+    };
+
+    rec.start();
+    setIsListening(true);
+  }, [lang]);
+
+  function parseTranscript(text) {
+    const items = [];
+    window.MENU.forEach((m)=>{ const keys=[m.nameJa,m.nameEn.toLowerCase(),m.id]; if(keys.some((k)=>text.toLowerCase().includes(k.toLowerCase()))){ const m2=text.match(/(\d+)/); items.push({id:m.id,qty:m2?Math.min(9,parseInt(m2[1])):1}); }});
+    return items.length ? items : [{id:"milk",qty:1}];
+  }
+
+  function editConfirmItem(id,qty){ setOrderItems((p)=>qty===0?p.filter((it)=>it.id!==id):p.map((it)=>it.id===id?{...it,qty}:it)); }
+  function handleCartChange(id,qty){ setCart((p)=>({...p,[id]:qty})); }
+  function confirmToCart(){ setCart(Object.fromEntries(orderItems.map((it)=>[it.id,it.qty]))); setScreen("cart"); }
+  function checkoutFromProducts(){ setOrderItems(cartItems); setScreen("cart"); }
+  function handlePay(){
+    const paying=orderItems.length?orderItems:cartItems;
+    const nextId=String(parseInt(history[0]?.id||"0142")+1).padStart(4,"0");
+    setHistory((p)=>[{id:nextId,minAgo:0,items:paying,status:"ready"},...p]);
+    setLastOrderId(nextId);
+    const total=paying.reduce((s,it)=>s+(window.MENU_MAP[it.id]?.tickets||0)*it.qty,0);
+    setTicketBalance((b)=>b-total); setCart({}); setOrderItems([]); setShowThankYou(true);
+  }
+
+  // screenRef を常に最新の screen に同期
+  useEffect3(() => { screenRef.current = screen; }, [screen]);
+
+  // ホーム表示と同時に自動で聴き始める
+  useEffect3(() => {
+    if (screen === "home") {
+      const t = setTimeout(() => startVoice(), 400);
+      return () => clearTimeout(t);
+    }
+  }, [screen]);
+
+  const NAV = [{key:"home",label:t.nav.home},{key:"products",label:t.nav.products},{key:"history",label:t.nav.history}];
+
+  return (
+    <div style={{ minHeight:"100vh", display:"flex", flexDirection:"column" }}>
+      <header style={{ position:"sticky", top:0, zIndex:50, height:64, background:"rgba(255,255,255,0.96)", backdropFilter:"blur(8px)", borderBottom:"1px solid var(--line)", display:"flex", alignItems:"center", padding:"0 32px", gap:24 }}>
+        <button onClick={()=>setScreen("home")} style={{ display:"flex", alignItems:"baseline", gap:8 }}>
+          <span style={{ fontSize:16, fontWeight:700, letterSpacing:"0.08em" }}>MILK STAND</span>
+          <span className="mono" style={{ fontSize:9, color:"var(--mute)", letterSpacing:"0.16em" }}>VOICE ORDER</span>
+        </button>
+        <nav style={{ flex:1, display:"flex", justifyContent:"center", gap:2 }}>
+          {NAV.map((tab)=>{
+            const active=screen===tab.key;
+            return <button key={tab.key} onClick={()=>setScreen(tab.key)} style={{ padding:"6px 20px", borderRadius:8, fontSize:14, fontWeight:active?600:400, color:active?"var(--ink)":"var(--mute)", background:active?"var(--bg-3)":"transparent", transition:"all .15s", border:"none", cursor:"pointer" }}>{tab.label}</button>;
+          })}
+        </nav>
+        <div style={{ display:"flex", alignItems:"center", gap:14 }}>
+          {cartCount>0 && <button onClick={()=>setScreen("cart")} style={{ display:"flex", alignItems:"center", gap:7, padding:"6px 14px", background:"var(--bg-3)", borderRadius:8, border:"none", cursor:"pointer", fontSize:13 }}>{window.Icon.cart(14)}<span className="mono num" style={{ fontWeight:600 }}>{cartCount}</span></button>}
+
+          {/* APIキー設定 */}
+          <div style={{ position:"relative" }}>
+            <button
+              onClick={()=>setShowKeyInput(v=>!v)}
+              title="Claude API Key"
+              style={{ padding:"5px 11px", fontSize:12, borderRadius:8, border:"1px solid var(--line)", background: apiKey ? "var(--ok)" : "var(--bg-3)", color: apiKey ? "#fff" : "var(--mute)", cursor:"pointer" }}
+            >
+              {apiKey ? "🔑 AI解析ON" : "🔑 APIキー"}
+            </button>
+            {showKeyInput && (
+              <div style={{ position:"absolute", right:0, top:"calc(100% + 8px)", zIndex:100, background:"#fff", border:"1px solid var(--line)", borderRadius:10, padding:14, boxShadow:"0 8px 24px rgba(0,0,0,.1)", width:300 }}>
+                <div style={{ fontSize:12, fontWeight:600, marginBottom:8 }}>Anthropic APIキー</div>
+                <input
+                  type="password"
+                  placeholder="sk-ant-..."
+                  defaultValue={apiKey}
+                  onChange={e=>{ const v=e.target.value; setApiKey(v); localStorage.setItem("ms_api_key",v); }}
+                  style={{ width:"100%", padding:"7px 10px", borderRadius:7, border:"1px solid var(--line)", fontSize:13, outline:"none" }}
+                />
+                <div style={{ fontSize:11, color:"var(--mute)", marginTop:6 }}>キーはブラウザのlocalStorageに保存されます。設定するとClaude Haikuで音声を解析します。</div>
+                <button onClick={()=>setShowKeyInput(false)} style={{ marginTop:10, width:"100%", padding:"6px", borderRadius:7, background:"var(--ink)", color:"#fff", fontSize:13, cursor:"pointer" }}>閉じる</button>
+              </div>
+            )}
+          </div>
+
+          <div style={{ display:"flex", border:"1px solid var(--line)", borderRadius:8, overflow:"hidden" }}>
+            {["ja","en"].map((l)=><button key={l} onClick={()=>setLang(l)} style={{ padding:"5px 13px", fontSize:12, fontWeight:lang===l?600:400, background:lang===l?"var(--ink)":"transparent", color:lang===l?"#fff":"var(--mute)", border:"none", cursor:"pointer", transition:"all .15s" }}>{l==="ja"?"日本":"EN"}</button>)}
+          </div>
+        </div>
+      </header>
+
+      <main style={{ flex:1 }}>
+        {screen==="home"      && <window.HomeScreen t={t} transcript={transcript} isListening={isListening} />}
+        {screen==="products"  && <window.ProductsScreen t={t} lang={lang} cart={cart} onChange={handleCartChange} onCheckout={checkoutFromProducts}/>}
+        {screen==="confirm"   && <window.ConfirmScreen t={t} lang={lang} items={orderItems} transcript={transcript} onEdit={editConfirmItem} onBack={()=>setScreen("home")} onConfirm={confirmToCart}/>}
+        {screen==="cart"      && <window.CartScreen t={t} lang={lang} items={cartItems} ticketBalance={ticketBalance} onBack={()=>setScreen(orderItems.length?"confirm":"products")} onPay={handlePay}/>}
+        {screen==="history"   && <window.HistoryScreen t={t} lang={lang} history={history}/>}
+      </main>
+
+      {showThankYou && <window.ThankYouOverlay t={t} orderId={lastOrderId} onClose={()=>{setShowThankYou(false);setScreen("home");}}/>}
+
+      {/* 解析中オーバーレイ */}
+      {parsing && (
+        <div style={{ position:"fixed", inset:0, zIndex:200, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", background:"rgba(255,255,247,0.88)", backdropFilter:"blur(6px)" }}>
+          <div style={{ fontSize:32, marginBottom:16, animation:"spin 1s linear infinite" }}>✦</div>
+          <div style={{ fontSize:16, fontWeight:600, color:"var(--ink)" }}>Claude Haiku が解析中...</div>
+          <div style={{ fontSize:13, color:"var(--mute)", marginTop:6 }}>音声注文をメニューに変換しています</div>
+          <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(React.createElement(App));
+  </script>
+</body>
+</html>

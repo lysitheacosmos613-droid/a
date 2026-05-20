@@ -613,7 +613,7 @@ function HomeScreen({ t, transcript, isListening }) {
       data-screen-label="01 ホーム"
       ref={heroRef}
       onPointerDown={handleSectionTap}
-      style={{ position:"relative", minHeight:"calc(100vh - 72px - 88px)", overflow:"hidden", padding:"0 80px", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", touchAction:"none" }}
+      style={{ position:"relative", minHeight:"calc(100vh - 72px - 88px)", overflow:"hidden", padding:"48px 80px 320px", display:"flex", flexDirection:"column", alignItems:"flex-start", justifyContent:"flex-start", touchAction:"none" }}
     >
       <div style={{ position:"absolute", inset:0, zIndex:1 }}>
         <window.BouncingBall width={dim.w} height={dim.h} size={72} gravity={2400} restitution={0.92} bounces={6} startFrom="top-right" obstacles={obstacles} onObstacleHit={handleHit} />

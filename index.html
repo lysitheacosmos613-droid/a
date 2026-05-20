@@ -1470,8 +1470,8 @@ ${window.MENU.map(m => `・${m.nameJa}（${m.id}）= ${m.tickets}チケット`).
 
       clearTimeout(silenceRef.current);
       if (unprocessed.trim()) {
-        // 4秒の無音で区切る（final 確定済みなら 4000、まだinterim中なら 4500）
-        const delay = newFinalAvailable ? 4000 : 4500;
+        // 段落区切りが取れている (final 完了) → 600ms / interim only → 1300ms
+        const delay = newFinalAvailable ? 600 : 1300;
         silenceRef.current = setTimeout(() => {
           const toProcess = (curFinal + curInterim).slice(processedLen);
           processedLen = curFinal.length;

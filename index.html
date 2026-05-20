@@ -1329,6 +1329,15 @@ ${window.MENU.map(m => `・${m.nameJa}（${m.id} / ${m.nameEn}）= ${m.tickets}�
 ★言語ルール: 発話言語と同じ言語で返答
 ★商品ルール: 値段・商品名は下記の値のみ使う。創作禁止。
 
+★加算ルール（最重要）: 同じお客様が話し続けているので、商品名と数量を単に言われたら【既存の数量に加算】する。上書きは「変更」「に変えて」「△個にして」と明示された時だけ。
+
+【加算/上書きの例】
+- 現在[pudding×3]で「プリン2個」→ 加算で {"type":"modify","items":[{"id":"pudding","qty":5}]}
+- 現在[pudding×3]で「プリンも」→ 加算で {"type":"modify","items":[{"id":"pudding","qty":4}]}
+- 現在[pudding×3]で「プリン2個に変更」→ 上書きで {"type":"modify","items":[{"id":"pudding","qty":2}]}
+- 現在[pudding×3]で「プリン2個にして」→ 上書きで {"type":"modify","items":[{"id":"pudding","qty":2}]}
+- 現在[]で「プリン2個」→ 新規追加で {"type":"modify","items":[{"id":"pudding","qty":2}]}
+
 【当店メニュー（公式データ）】
 ${window.MENU.map(m => `・${m.nameJa}（${m.id}）= ${m.tickets}チケット`).join("\n")}
 
@@ -1433,46 +1442,59 @@ ${window.MENU.map(m => `・${m.nameJa}（${m.id}）= ${m.tickets}チケット`).
     rec._stopped = false;
     recRef.current = rec;
 
-    rec.onresult = (e) => {
-      let text = "";
-      for (let i = 0; i < e.results.length; i++) {
-        text += e.results[i][0].transcript;
-      }
-      setTranscript(text);
-      // 1.5秒の無音で自動確定（音声は止めずバックグラウンドで解析）
-      clearTimeout(silenceRef.current);
-      if (text.trim()) {
-        silenceRef.current = setTimeout(async () => {
-          // 音声は停止せずそのまま継続。トランスクリプトだけクリア
-          setTranscript("");
-          if (screenRef.current === "confirm") {
-            const result = await classifyAndActWithHaiku(text, orderItemsRef.current);
-            if (result.type === "chat") {
-              showClerk(result.reply);
-            } else if (result.type === "modify") {
-              if (result.items.length === 0) {
-                setOrderItems([]);
-                setScreen("home");
-                showClerk("注文を全部キャンセルしますね〜！");
-                return;
-              }
-              setOrderItems(result.items);
-            } else {
-              if (result.items.length > 0) {
-                setOrderQueue(q => [...q, result.items]);
-                showClerk("次のお客さんですね、順番に作りますね〜！");
-              }
-            }
-          } else {
-            const result = await parseWithHaiku(text);
-            if (result.type === "chat") {
-              showClerk(result.reply);
-            } else {
-              setOrderItems(result.items);
-              setScreen("confirm");
-            }
+    // セグメント別の追跡: isFinal確定済みのテキストとinterim
+    let processedLen = 0;       // 既に処理した final テキストの長さ
+    let curFinal = "";          // 現在の累計 final テキスト
+    let curInterim = "";        // 現在の interim テキスト
+
+    async function processSegment(text) {
+      if (!text.trim()) return;
+      if (screenRef.current === "confirm") {
+        const result = await classifyAndActWithHaiku(text, orderItemsRef.current);
+        if (result.type === "chat") {
+          showClerk(result.reply);
+        } else if (result.type === "modify") {
+          if (result.items.length === 0) {
+            setOrderItems([]); setScreen("home");
+            showClerk("注文を全部キャンセルしますね〜！");
+            return;
           }
-        }, 1500);
+          setOrderItems(result.items);
+        } else if (result.items.length > 0) {
+          setOrderQueue(q => [...q, result.items]);
+          showClerk("次のお客さんですね、順番に作りますね〜！");
+        }
+      } else {
+        const result = await parseWithHaiku(text);
+        if (result.type === "chat") showClerk(result.reply);
+        else { setOrderItems(result.items); setScreen("confirm"); }
+      }
+    }
+
+    rec.onresult = (e) => {
+      curFinal = ""; curInterim = "";
+      for (let i = 0; i < e.results.length; i++) {
+        const txt = e.results[i][0].transcript;
+        if (e.results[i].isFinal) curFinal += txt;
+        else curInterim += txt;
+      }
+      setTranscript(curFinal + curInterim);
+
+      // 区切り判定: 新しい final セグメントが届いたら即座に処理（短い debounce）
+      const newFinalAvailable = curFinal.length > processedLen;
+      const unprocessed = (curFinal + curInterim).slice(processedLen);
+
+      clearTimeout(silenceRef.current);
+      if (unprocessed.trim()) {
+        // 段落区切りが取れている (final 完了) → 600ms / interim only → 1300ms
+        const delay = newFinalAvailable ? 600 : 1300;
+        silenceRef.current = setTimeout(() => {
+          const toProcess = (curFinal + curInterim).slice(processedLen);
+          processedLen = curFinal.length;
+          curInterim = "";
+          setTranscript(curFinal); // interim部分をクリア
+          processSegment(toProcess);
+        }, delay);
       }
     };
 

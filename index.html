@@ -1238,13 +1238,16 @@ function App() {
     };
   }, []);
 
-  // 日本語ボイスをキャッシュ
+  // 日本語ボイスをキャッシュ（渋い男性ボイスを優先）
   const jaVoiceRef = useRef3(null);
   useEffect3(() => {
     const pickVoice = () => {
       const voices = window.speechSynthesis?.getVoices?.() || [];
-      jaVoiceRef.current = voices.find(v => v.lang?.startsWith("ja") && /female|woman|kyoko|otoya|haruka|nanami|sayaka/i.test(v.name))
-        || voices.find(v => v.lang?.startsWith("ja"))
+      const ja = voices.filter(v => v.lang?.startsWith("ja"));
+      // 男性ボイス優先: Otoya(iOS男性), Hattori, Ichiro, Kenny, Daichi など
+      jaVoiceRef.current = ja.find(v => /otoya|hattori|ichiro|kenny|daichi|male|man/i.test(v.name))
+        || ja.find(v => !/kyoko|haruka|nanami|sayaka|o-ren|female|woman/i.test(v.name))
+        || ja[0]
         || null;
     };
     pickVoice();
@@ -1259,7 +1262,7 @@ function App() {
       const isJa = /[぀-ヿ㐀-鿿]/.test(text);
       u.lang = isJa ? "ja-JP" : "en-US";
       if (isJa && jaVoiceRef.current) u.voice = jaVoiceRef.current;
-      u.rate = 1.05; u.pitch = 1.1; u.volume = 1;
+      u.rate = 0.95; u.pitch = 0.7; u.volume = 1;
       u.onstart = () => {
         speakingRef.current = true;
         stopVoice();

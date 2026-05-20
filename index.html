@@ -1212,25 +1212,29 @@ function App() {
   const speakingRef = useRef3(false);
   const ttsWarmRef = useRef3(false);
 
-  // iOS Safari: 初回ユーザー操作で TTS をアンロックする
+  // iOS Safari: 初回ユーザー操作で TTS をアンロック
   useEffect3(() => {
     const warmup = () => {
       if (ttsWarmRef.current || !window.speechSynthesis) return;
       try {
-        // 無音の発話で TTS を起こす
-        const u = new SpeechSynthesisUtterance(" ");
-        u.volume = 0; u.lang = "ja-JP";
+        // 短く実音の発話で iOS の TTS 権限を獲得
+        window.speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance("ー");
+        u.volume = 0.5; u.rate = 10; u.lang = "ja-JP";
+        u.onend = () => { ttsWarmRef.current = true; };
+        u.onstart = () => { ttsWarmRef.current = true; };
         window.speechSynthesis.speak(u);
-        ttsWarmRef.current = true;
       } catch(e) {}
-      window.removeEventListener("pointerdown", warmup);
-      window.removeEventListener("touchstart", warmup);
     };
-    window.addEventListener("pointerdown", warmup, { once: true });
-    window.addEventListener("touchstart", warmup, { once: true });
+    // 念のため複数のイベントで拾う & once: false
+    const opts = { passive: true };
+    document.addEventListener("pointerdown", warmup, opts);
+    document.addEventListener("touchstart", warmup, opts);
+    document.addEventListener("click", warmup, opts);
     return () => {
-      window.removeEventListener("pointerdown", warmup);
-      window.removeEventListener("touchstart", warmup);
+      document.removeEventListener("pointerdown", warmup, opts);
+      document.removeEventListener("touchstart", warmup, opts);
+      document.removeEventListener("click", warmup, opts);
     };
   }, []);
 
@@ -1620,6 +1624,13 @@ ${window.MENU.map(m => `・${m.nameJa}（${m.id}）= ${m.tickets}チケット`).
           })}
         </nav>
         <div style={{ display:"flex", alignItems:"center", gap:14 }}>
+          {/* 音声テストボタン */}
+          <button
+            onClick={()=>{ ttsWarmRef.current = true; speak("音声テスト、こんにちは！"); }}
+            style={{ padding:"5px 11px", fontSize:12, borderRadius:8, border:"1px solid rgba(255,255,255,0.4)", background:"rgba(255,255,255,0.18)", color:"#fff", cursor:"pointer" }}
+          >
+            🔊 音声テスト
+          </button>
           {cartCount>0 && <button onClick={()=>setScreen("cart")} style={{ display:"flex", alignItems:"center", gap:7, padding:"6px 14px", background:"var(--bg-3)", borderRadius:8, border:"none", cursor:"pointer", fontSize:13 }}>{window.Icon.cart(14)}<span className="mono num" style={{ fontWeight:600 }}>{cartCount}</span></button>}
 
           {/* APIキー設定 */}

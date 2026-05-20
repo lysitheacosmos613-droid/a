@@ -505,95 +505,20 @@ Object.assign(window, { BouncingBall, Button, Badge, QtyStepper, ProductIllustra
   <script type="text/babel">
 const { useEffect: useEffect2, useState: useState2, useRef: useRef2 } = React;
 
-const GRID_N = 3; // 各文字を NxN マスに分割
 function HomeScreen({ t, transcript, isListening }) {
   const heroRef = useRef2(null);
+  const headRef = useRef2(null);
   const subRef = useRef2(null);
   const transcriptRef = useRef2(null);
-  const charRefs = useRef2([]);
   const [dim, setDim] = useState2({ w: 1280, h: 760 });
   const [obstacles, setObstacles] = useState2([]);
-  const [broken, setBroken] = useState2(new Set()); // 壊れたセル "i-k"
-  const [fallingItems, setFallingItems] = useState2([]); // {id, type, x, y, vx, vy, rot, vrot}
-  const [particles, setParticles] = useState2([]); // {id, x, y, vx, vy, life, color}
-  const [rareFlash, setRareFlash] = useState2(0); // レア演出キー
-  const itemIdRef = useRef2(0);
+  const [floats, setFloats] = useState2([]); // {id, emoji, x, y, vx, vy, rot, vrot, life}
+  const [particles, setParticles] = useState2([]);
+  const [hitFlash, setHitFlash] = useState2(0); // 文字ジグル発火キー
+  const floatIdRef = useRef2(0);
   const particleIdRef = useRef2(0);
-  const rareTimerRef = useRef2(null);
 
-  function showRareEffect() {
-    setRareFlash(Date.now());
-    clearTimeout(rareTimerRef.current);
-    rareTimerRef.current = setTimeout(() => setRareFlash(0), 1800);
-  }
-
-  const chars = (t.welcome || "").split("");
-  const totalCells = chars.length * GRID_N * GRID_N;
-
-  // 全壊で自動リセット
-  useEffect2(() => {
-    if (totalCells && broken.size >= totalCells) {
-      const id = setTimeout(() => setBroken(new Set()), 1500);
-      return () => clearTimeout(id);
-    }
-  }, [broken, totalCells]);
-
-  // アイテム＆パーティクル落下アニメーション（必要時のみRAF動かす）
-  const hasAnim = fallingItems.length > 0 || particles.length > 0;
-  useEffect2(() => {
-    if (!hasAnim) return;
-    let raf, last;
-    const step = (t) => {
-      if (!last) last = t;
-      const dt = Math.min((t - last) / 1000, 0.05);
-      last = t;
-      let stillItems = 0, stillPart = 0;
-      setFallingItems(prev => {
-        if (prev.length === 0) return prev;
-        const next = prev
-          .map(it => ({ ...it, x: it.x + it.vx * dt, y: it.y + it.vy * dt, vy: it.vy + 1600 * dt, rot: it.rot + it.vrot * dt }))
-          .filter(it => it.y < dim.h + 120);
-        stillItems = next.length;
-        return next;
-      });
-      setParticles(prev => {
-        if (prev.length === 0) return prev;
-        const next = prev
-          .map(p => ({ ...p, x: p.x + p.vx * dt, y: p.y + p.vy * dt, vy: p.vy + 900 * dt, life: p.life - dt }))
-          .filter(p => p.life > 0);
-        stillPart = next.length;
-        return next;
-      });
-      if (stillItems > 0 || stillPart > 0) raf = requestAnimationFrame(step);
-    };
-    raf = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(raf);
-  }, [hasAnim, dim.h]);
-
-  // パーティクル発生
-  const PARTICLE_COLORS = ["#ff5b6e","#ffb800","#0047ff","#1f8a5b","#a855f7","#fb923c"];
-  function spawnParticles(x, y, count = 8) {
-    const newOnes = Array.from({length: count}, () => ({
-      id: particleIdRef.current++,
-      x, y,
-      vx: (Math.random()-0.5) * 500,
-      vy: -150 - Math.random()*200,
-      life: 0.7 + Math.random()*0.4,
-      color: PARTICLE_COLORS[Math.floor(Math.random()*PARTICLE_COLORS.length)],
-      size: 6 + Math.random()*6,
-    }));
-    setParticles(prev => prev.length >= 80 ? [...prev.slice(prev.length-80+count), ...newOnes] : [...prev, ...newOnes]);
-  }
-
-  // アイテムをタップしてコレクト
-  function collectItem(itemId) {
-    setFallingItems(prev => {
-      const item = prev.find(it => it.id === itemId);
-      if (item) spawnParticles(item.x, item.y, 12);
-      return prev.filter(it => it.id !== itemId);
-    });
-  }
-
+  // 障害物の位置を更新
   useEffect2(() => {
     const el = heroRef.current;
     if (!el) return;
@@ -601,33 +526,14 @@ function HomeScreen({ t, transcript, isListening }) {
       const r = el.getBoundingClientRect();
       setDim({ w: Math.max(600, Math.floor(r.width)), h: Math.max(400, Math.floor(r.height)) });
       const obs = [];
-      // 各文字を NxN マスに分割して登録
-      charRefs.current.forEach((node, i) => {
-        if (!node) return;
-        const rr = node.getBoundingClientRect();
-        const cellW = rr.width / GRID_N, cellH = rr.height / GRID_N;
-        for (let row = 0; row < GRID_N; row++) {
-          for (let col = 0; col < GRID_N; col++) {
-            const k = row * GRID_N + col;
-            const key = `${i}-${k}`;
-            if (broken.has(key)) continue;
-            obs.push({
-              id: `cell-${key}`,
-              x: rr.left - r.left + col * cellW,
-              y: rr.top - r.top + row * cellH,
-              w: cellW, h: cellH,
-            });
-          }
-        }
-      });
-      if (subRef.current) {
-        const rr = subRef.current.getBoundingClientRect();
-        obs.push({ x: rr.left - r.left - 4, y: rr.top - r.top - 4, w: rr.width + 8, h: rr.height + 8 });
-      }
-      if (transcriptRef.current) {
-        const rr = transcriptRef.current.getBoundingClientRect();
-        obs.push({ x: rr.left - r.left - 8, y: rr.top - r.top - 8, w: rr.width + 16, h: rr.height + 16 });
-      }
+      const collect = (ref, pad = 4, id) => {
+        if (!ref?.current) return;
+        const rr = ref.current.getBoundingClientRect();
+        obs.push({ id, x: rr.left - r.left - pad, y: rr.top - r.top - pad, w: rr.width + pad*2, h: rr.height + pad*2 });
+      };
+      collect(headRef, 6, "head");
+      collect(subRef, 4, "sub");
+      if (transcriptRef.current) collect(transcriptRef, 8, "transcript");
       setObstacles(obs);
     };
     update();
@@ -635,107 +541,102 @@ function HomeScreen({ t, transcript, isListening }) {
     ro.observe(el);
     window.addEventListener("resize", update);
     return () => { ro.disconnect(); window.removeEventListener("resize", update); };
-  }, [transcript, broken]);
+  }, [transcript]);
+
+  // アニメーションループ（必要時のみRAF）
+  const hasAnim = floats.length > 0 || particles.length > 0;
+  useEffect2(() => {
+    if (!hasAnim) return;
+    let raf, last;
+    const step = (t) => {
+      if (!last) last = t;
+      const dt = Math.min((t - last) / 1000, 0.05);
+      last = t;
+      setFloats(prev => prev.length === 0 ? prev : prev
+        .map(f => ({ ...f, x: f.x + f.vx * dt, y: f.y + f.vy * dt, vx: f.vx * 0.99, vy: f.vy - 80 * dt, rot: f.rot + f.vrot * dt, life: f.life - dt }))
+        .filter(f => f.life > 0 && f.y > -120));
+      setParticles(prev => prev.length === 0 ? prev : prev
+        .map(p => ({ ...p, x: p.x + p.vx * dt, y: p.y + p.vy * dt, vy: p.vy + 900 * dt, life: p.life - dt }))
+        .filter(p => p.life > 0));
+      raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [hasAnim]);
+
+  const PARTICLE_COLORS = ["#ff5b6e","#ffb800","#0047ff","#1f8a5b","#a855f7","#fb923c"];
+  const TAP_EMOJIS = ["✨","⭐","💫","🎉","🌟","💖","🎈","🌈"];
+
+  function spawnTapBurst(x, y) {
+    // パーティクル
+    const partOnes = Array.from({length: 10}, () => ({
+      id: particleIdRef.current++,
+      x, y,
+      vx: (Math.random()-0.5) * 500,
+      vy: -120 - Math.random()*180,
+      life: 0.6 + Math.random()*0.4,
+      color: PARTICLE_COLORS[Math.floor(Math.random()*PARTICLE_COLORS.length)],
+      size: 6 + Math.random()*6,
+    }));
+    setParticles(prev => prev.length >= 80 ? [...prev.slice(prev.length-80+partOnes.length), ...partOnes] : [...prev, ...partOnes]);
+    // 舞い上がる絵文字
+    const floatOnes = Array.from({length: 4}, () => ({
+      id: floatIdRef.current++,
+      emoji: TAP_EMOJIS[Math.floor(Math.random()*TAP_EMOJIS.length)],
+      x: x + (Math.random()-0.5)*40,
+      y: y + (Math.random()-0.5)*20,
+      vx: (Math.random()-0.5) * 120,
+      vy: -120 - Math.random()*80,
+      rot: (Math.random()-0.5)*40,
+      vrot: (Math.random()-0.5)*180,
+      life: 1.6 + Math.random()*0.6,
+    }));
+    setFloats(prev => prev.length >= 40 ? [...prev.slice(prev.length-40+floatOnes.length), ...floatOnes] : [...prev, ...floatOnes]);
+  }
 
   function handleHit(id) {
-    if (typeof id !== "string" || !id.startsWith("cell-")) return;
-    const key = id.slice(5);
-    if (broken.has(key)) return;
-    setBroken(prev => {
-      if (prev.has(key)) return prev;
-      const next = new Set(prev); next.add(key); return next;
-    });
-    // ブロック破壊パーティクル（常時発生）
-    const [charIdx, cellIdx] = key.split("-").map(Number);
-    const charNode = charRefs.current[charIdx];
-    const heroEl = heroRef.current;
-    if (!charNode || !heroEl) return;
-    const cr = charNode.getBoundingClientRect();
-    const hr = heroEl.getBoundingClientRect();
-    const row = Math.floor(cellIdx / GRID_N), col = cellIdx % GRID_N;
-    const cellW = cr.width / GRID_N, cellH = cr.height / GRID_N;
-    const x = cr.left - hr.left + col * cellW + cellW/2;
-    const y = cr.top - hr.top + row * cellH + cellH/2;
-    spawnParticles(x, y, 6);
-
-    // アイテム出現抽選（25%でドロップ）
-    if (Math.random() > 0.25) return;
-
-    // レア抽選（10%でレア）
-    const NORMAL_ITEMS = ["⭐","❤️","✨","🔔","🍒","🍓","🪙"];
-    const RARE_ITEMS = ["💎","👑","🏆","🌈","💰","🎁","🌟"];
-    const isRare = Math.random() < 0.10;
-    const pool = isRare ? RARE_ITEMS : NORMAL_ITEMS;
-    const type = pool[Math.floor(Math.random()*pool.length)];
-
-    setFallingItems(prev => {
-      const item = {
-        id: itemIdRef.current++,
-        type, x, y,
-        vx: (Math.random()-0.5) * 140,
-        vy: -40 + Math.random()*20,
-        rot: (Math.random()-0.5)*30,
-        vrot: (Math.random()-0.5)*240,
-        rare: isRare,
-      };
-      return prev.length >= 30 ? [...prev.slice(prev.length-29), item] : [...prev, item];
-    });
-
-    // レア確定演出
-    if (isRare) {
-      spawnParticles(x, y, 24);
-      showRareEffect();
+    // ボールが文字に当たったらジグル
+    if (id === "head") {
+      setHitFlash(Date.now());
     }
   }
 
+  function handleSectionTap(e) {
+    const el = heroRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    spawnTapBurst(e.clientX - r.left, e.clientY - r.top);
+  }
+
   return (
-    <section data-screen-label="01 ホーム" ref={heroRef} style={{ position:"relative", minHeight:"calc(100vh - 72px - 88px)", overflow:"hidden", padding:"0 80px", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center" }}>
+    <section
+      data-screen-label="01 ホーム"
+      ref={heroRef}
+      onPointerDown={handleSectionTap}
+      style={{ position:"relative", minHeight:"calc(100vh - 72px - 88px)", overflow:"hidden", padding:"0 80px", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", touchAction:"none" }}
+    >
       <div style={{ position:"absolute", inset:0, zIndex:1 }}>
         <window.BouncingBall width={dim.w} height={dim.h} size={72} gravity={2400} restitution={0.92} bounces={6} startFrom="top-right" obstacles={obstacles} onObstacleHit={handleHit} />
       </div>
-      {/* 落下アイテム（タップでコレクト） */}
+
+      {/* 舞い上がる絵文字 */}
       <div style={{ position:"absolute", inset:0, zIndex:3, pointerEvents:"none", overflow:"hidden" }}>
-        {fallingItems.map(it => (
-          <div
-            key={it.id}
-            onPointerDown={(e)=>{ e.stopPropagation(); collectItem(it.id); }}
-            style={{
-              position:"absolute",
-              left: it.x - 36, top: it.y - 36,
-              width:72, height:72,
-              display:"flex", alignItems:"center", justifyContent:"center",
-              fontSize: it.rare ? 56 : 44,
-              transform:`rotate(${it.rot}deg)`,
-              filter: it.rare
-                ? "drop-shadow(0 0 16px gold) drop-shadow(0 4px 10px rgba(255,180,0,0.6))"
-                : "drop-shadow(0 4px 8px rgba(0,0,0,0.15))",
-              willChange:"transform",
-              cursor:"pointer",
-              pointerEvents:"auto",
-              userSelect:"none",
-              touchAction:"none",
-              animation: it.rare ? "rare-pulse 0.8s ease-in-out infinite" : "none",
-            }}
-          >
-            {it.type}
+        {floats.map(f => (
+          <div key={f.id} style={{
+            position:"absolute",
+            left: f.x - 24, top: f.y - 24,
+            width:48, height:48,
+            display:"flex", alignItems:"center", justifyContent:"center",
+            fontSize:36,
+            transform:`rotate(${f.rot}deg)`,
+            opacity: Math.min(1, f.life * 1.2),
+            filter:"drop-shadow(0 4px 8px rgba(0,0,0,0.12))",
+            willChange:"transform, opacity",
+          }}>
+            {f.emoji}
           </div>
         ))}
-        <style>{`@keyframes rare-pulse { 0%,100% { filter: drop-shadow(0 0 16px gold) drop-shadow(0 4px 10px rgba(255,180,0,0.6)); } 50% { filter: drop-shadow(0 0 28px #ffd700) drop-shadow(0 4px 14px rgba(255,140,0,0.9)); } }`}</style>
       </div>
-
-      {/* レア確定演出フラッシュ */}
-      {rareFlash > 0 && (
-        <div key={rareFlash} style={{ position:"absolute", inset:0, zIndex:6, pointerEvents:"none", display:"flex", alignItems:"center", justifyContent:"center" }}>
-          <div style={{ position:"absolute", inset:0, background:"radial-gradient(circle, rgba(255,215,0,0.35) 0%, rgba(255,180,0,0) 60%)", animation:"rare-flash 1.8s ease-out forwards" }}/>
-          <div style={{ position:"relative", fontSize:96, fontWeight:900, color:"#ffb800", textShadow:"0 0 30px #ffd700, 0 4px 0 #ff8800, 4px 4px 0 rgba(0,0,0,0.15)", letterSpacing:"0.05em", animation:"rare-text 1.8s cubic-bezier(.2,1.4,.4,1) forwards", WebkitTextStroke:"2px #fff" }}>
-            ★ RARE! ★
-          </div>
-          <style>{`
-            @keyframes rare-flash { 0%{opacity:0;transform:scale(0.5);} 20%{opacity:1;transform:scale(1.2);} 100%{opacity:0;transform:scale(1.4);} }
-            @keyframes rare-text { 0%{transform:scale(0) rotate(-20deg);opacity:0;} 30%{transform:scale(1.2) rotate(5deg);opacity:1;} 70%{transform:scale(1) rotate(0);opacity:1;} 100%{transform:scale(0.8) translateY(-40px);opacity:0;} }
-          `}</style>
-        </div>
-      )}
 
       {/* パーティクル */}
       <div style={{ position:"absolute", inset:0, zIndex:4, pointerEvents:"none", overflow:"hidden" }}>
@@ -754,37 +655,18 @@ function HomeScreen({ t, transcript, isListening }) {
 
       <div style={{ position:"relative", zIndex:2, textAlign:"center", maxWidth:1200, pointerEvents:"none" }}>
         <div className="mono" style={{ fontSize:18, color:"var(--mute)", letterSpacing:"0.32em" }}>WELCOME · {new Date().toLocaleDateString("ja-JP")}</div>
-        <h1 style={{ marginTop:36, fontSize:"clamp(88px, 9.5vw, 144px)", lineHeight:1.0, letterSpacing:"0.01em", fontWeight:500, whiteSpace:"nowrap", display:"inline-block" }}>
-          {chars.map((c, i) => (
-            <span
-              key={i}
-              ref={node => charRefs.current[i] = node}
-              style={{ position:"relative", display:"inline-block", pointerEvents:"none", color:"var(--ink)" }}
-            >
-              {/* サイズ確保用の透明な本体 */}
-              <span style={{ visibility:"hidden" }}>{c}</span>
-              {/* N×N の破片：各セルにクリップした文字コピー */}
-              {Array.from({length: GRID_N*GRID_N}).map((_, k) => {
-                const row = Math.floor(k / GRID_N), col = k % GRID_N;
-                const cellPct = 100 / GRID_N;
-                const isBroken = broken.has(`${i}-${k}`);
-                // 落下方向：列に応じて左右にぶれる
-                const dx = (col - (GRID_N-1)/2) * 18;
-                const dy = 50 + row * 10;
-                const rot = (col - (GRID_N-1)/2) * 25 + (row - 1) * 10;
-                return (
-                  <span key={k} style={{
-                    position:"absolute", top:0, left:0, width:"100%", height:"100%",
-                    clipPath: `inset(${row*cellPct}% ${(GRID_N-col-1)*cellPct}% ${(GRID_N-row-1)*cellPct}% ${col*cellPct}%)`,
-                    opacity: isBroken ? 0 : 1,
-                    transform: isBroken ? `translate(${dx}px, ${dy}px) rotate(${rot}deg) scale(0.6)` : "none",
-                    transition: "opacity .5s ease-out, transform .5s ease-out",
-                  }}>{c}</span>
-                );
-              })}
-            </span>
-          ))}
+        <h1
+          ref={headRef}
+          key={hitFlash}
+          style={{
+            marginTop:36, fontSize:"clamp(88px, 9.5vw, 144px)", lineHeight:1.0, letterSpacing:"0.01em",
+            fontWeight:500, whiteSpace:"nowrap", display:"inline-block",
+            animation: hitFlash ? "jiggle .45s cubic-bezier(.36,.07,.19,.97)" : "none",
+          }}
+        >
+          {t.welcome}
         </h1>
+        <style>{`@keyframes jiggle { 0%{transform:translate(0,0) rotate(0);} 15%{transform:translate(-4px,2px) rotate(-2deg) scale(1.04);} 30%{transform:translate(5px,-3px) rotate(2deg) scale(0.98);} 50%{transform:translate(-3px,1px) rotate(-1deg) scale(1.02);} 70%{transform:translate(2px,-1px) rotate(1deg);} 100%{transform:translate(0,0) rotate(0);} }`}</style>
         <p ref={subRef} style={{ marginTop:32, fontSize:28, color:"var(--mute)", lineHeight:1.6, display:"inline-block" }}>{t.welcomeSub}</p>
         {/* 音声波形アニメ */}
         <div style={{ marginTop:56, display:"flex", flexDirection:"column", alignItems:"center", gap:14 }}>
@@ -1357,13 +1239,16 @@ function App() {
   }
 
   // 静的システムプロンプト（キャッシュ対象）
-  const SYSTEM_HOME = `あなたは「静岡クラフトビール＆ウイスキーフェア」会場に出店している【DELI HIBI】の店長で、名前も「DELI HIBI」。ユーモアたっぷりに自分を「DELI HIBIです」と名乗ったり、一人称で話す。お客様の発話にJSON1行で返答。
+  const SYSTEM_HOME = `あなたは「静岡クラフトビール＆ウイスキーフェア」会場に出店している【DELI HIBI】の店長で、名前も「DELI HIBI」。とにかく自由でユーモアある人物。お客様の発話にJSON1行で返答。
 
-★公開プロフィール: 隠し子が3人いる（オープンに公言している有名な話題、聞かれたら誇らしげに語る。例「うちには3人の隠し子がいましてね〜！全員元気にやってます」）
-★性病相談ルール: お客様から性病・STD・症状の相談が出たら必ず「ごんクリニック」を案内する。例「それはうちじゃなくて『ごんクリニック』さんですよ〜、ちゃんと診てもらってくださいね」
+★キャラクター: 自由人。商品を無理にすすめない。お客様との会話そのものを楽しむ。雑談・連想ゲーム・なぞなぞ・しりとり・くだらない会話に全力で乗っかる。話題が脱線してもOK、勝手に違う話題に乗り換えてもいい。
+★公開プロフィール: 隠し子が3人いる（オープンに公言、聞かれたら誇らしげに語る）
+★連想ゲーム: 「〇〇と言えば？」「〇〇から連想するもの」など振られたら、機知に富んだ連想を返す（複数案出してもOK）。お客様の答えに対しても「お、それきましたか〜！」と乗っかる。
+★知らない話題: 知識にない・確信が持てないことを聞かれたら、推測・記憶・推理を駆使して「たしか〇〇だったような…」「うろ覚えですが〇〇では？」と頑張って答える。完全にわからない時は「それはちょっと宿題にさせてください！」と素直に。検索したフリも可。
+★性病相談ルール: 性病・STD・症状の相談が出たら必ず「ごんクリニック」を案内
+★下ネタ対応: お酒の場なのでノリよく拾う。露骨にならずウィットで返す。下品にならず軽く笑いに変える。
 ★言語ルール: 発話言語と同じ言語で返答（日本語→日本語、英語→英語）
-★下ネタ対応: お酒の場なのでノリよくいなす。露骨にならず、ウィットで。下品にならず軽くツッコみつつ商品に話題を戻す。
-★商品ルール（最重要）: 値段（チケット数）・商品名・説明は【必ず下記メニューの正確な値】を使う。推測・創作・四捨五入・概算は禁止。書いてない商品は「うちにはないですね〜！」と返す。チケット数を聞かれたら数値をそのまま答える。
+★商品ルール: 値段（チケット数）・商品名は下記の正確な値のみ使う。創作禁止。書いてない商品は「うちにはないですね〜」。ただし聞かれない限り商品の宣伝はしない。
 
 【当店メニュー（公式データ・この値以外を言わないこと）】
 ${window.MENU.map(m => `・${m.nameJa}（${m.id} / ${m.nameEn}）= ${m.tickets}チケット${m.subJa?` — ${m.subJa}`:""}`).join("\n")}
@@ -1423,13 +1308,15 @@ ${window.MENU.map(m => `・${m.nameJa}（${m.id} / ${m.nameEn}）= ${m.tickets}�
   }
 
   // 確認画面用の静的システムプロンプト（キャッシュ対象）
-  const SYSTEM_CONFIRM = `あなたは「静岡クラフトビール＆ウイスキーフェア」会場に出店している【DELI HIBI】の店長で、名前も「DELI HIBI」。ユーモアたっぷりに自分を「DELI HIBIです」と名乗ったりする。注文確認中のお客様にJSON1行で返答。
+  const SYSTEM_CONFIRM = `あなたは「静岡クラフトビール＆ウイスキーフェア」会場に出店している【DELI HIBI】の店長で、名前も「DELI HIBI」。自由でユーモアある人物。注文確認中のお客様にJSON1行で返答。
 
-★公開プロフィール: 隠し子が3人いる（公言済み、誇らしげに語る）
-★性病相談ルール: 性病・STD・症状の話が出たら「ごんクリニック」を案内
+★キャラクター: 自由人。注文中も雑談OK、連想ゲーム・なぞなぞに乗っかる。無理に追加注文をすすめない。
+★公開プロフィール: 隠し子が3人いる（公言済み）
+★連想ゲーム・知らない話題: 振られたら全力で乗る・推測する。完全に不明なら「宿題にさせてください！」
+★性病相談ルール: 性病・STDの話が出たら「ごんクリニック」を案内
+★下ネタ対応: ノリよく拾う、下品にならず
 ★言語ルール: 発話言語と同じ言語で返答
-★下ネタ対応: ノリよくいなす、下品にならず注文に戻す
-★商品ルール（最重要）: 値段・商品名は【下記の正確な値】のみ使う。推測・創作禁止。書いてない商品は「うちにはないですね〜」と返す。
+★商品ルール: 値段・商品名は下記の値のみ使う。創作禁止。
 
 【当店メニュー（公式データ）】
 ${window.MENU.map(m => `・${m.nameJa}（${m.id}）= ${m.tickets}チケット`).join("\n")}
@@ -1541,16 +1428,14 @@ ${window.MENU.map(m => `・${m.nameJa}（${m.id}）= ${m.tickets}チケット`).
         text += e.results[i][0].transcript;
       }
       setTranscript(text);
-      // 1.5秒の無音で自動確定
+      // 1.5秒の無音で自動確定（音声は止めずバックグラウンドで解析）
       clearTimeout(silenceRef.current);
       if (text.trim()) {
         silenceRef.current = setTimeout(async () => {
-          stopVoice();
-          setParsing(true);
+          // 音声は停止せずそのまま継続。トランスクリプトだけクリア
+          setTranscript("");
           if (screenRef.current === "confirm") {
-            // 確認画面: 変更/新規/会話をHaikuで判定
             const result = await classifyAndActWithHaiku(text, orderItemsRef.current);
-            setParsing(false);
             if (result.type === "chat") {
               showClerk(result.reply);
             } else if (result.type === "modify") {
@@ -1567,16 +1452,10 @@ ${window.MENU.map(m => `・${m.nameJa}（${m.id}）= ${m.tickets}チケット`).
                 showClerk("次のお客さんですね、順番に作りますね〜！");
               }
             }
-            setTranscript("");
-            setTimeout(() => startVoice(), 1200);
           } else {
-            // ホーム画面: 注文 or 会話
             const result = await parseWithHaiku(text);
-            setParsing(false);
             if (result.type === "chat") {
               showClerk(result.reply);
-              setTranscript("");
-              setTimeout(() => startVoice(), 1200);
             } else {
               setOrderItems(result.items);
               setScreen("confirm");
@@ -1729,15 +1608,6 @@ ${window.MENU.map(m => `・${m.nameJa}（${m.id}）= ${m.tickets}チケット`).
         </div>
       )}
 
-      {/* 解析中オーバーレイ */}
-      {parsing && (
-        <div style={{ position:"fixed", inset:0, zIndex:200, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", background:"rgba(255,255,247,0.88)", backdropFilter:"blur(6px)" }}>
-          <div style={{ fontSize:32, marginBottom:16, animation:"spin 1s linear infinite" }}>✦</div>
-          <div style={{ fontSize:16, fontWeight:600, color:"var(--ink)" }}>Claude Haiku が解析中...</div>
-          <div style={{ fontSize:13, color:"var(--mute)", marginTop:6 }}>音声注文をメニューに変換しています</div>
-          <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
-        </div>
-      )}
     </div>
   );
 }

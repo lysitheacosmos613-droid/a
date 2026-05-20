@@ -1254,33 +1254,11 @@ function App() {
     if (window.speechSynthesis) window.speechSynthesis.onvoiceschanged = pickVoice;
   }, []);
 
-  function speak(text) {
-    if (!text || !window.speechSynthesis) return;
-    try {
-      window.speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance(text);
-      const isJa = /[぀-ヿ㐀-鿿]/.test(text);
-      u.lang = isJa ? "ja-JP" : "en-US";
-      if (isJa && jaVoiceRef.current) u.voice = jaVoiceRef.current;
-      u.rate = 0.95; u.pitch = 0.7; u.volume = 1;
-      u.onstart = () => {
-        speakingRef.current = true;
-        stopVoice();
-      };
-      u.onend = u.onerror = () => {
-        speakingRef.current = false;
-        if (screenRef.current === "home" || screenRef.current === "confirm") {
-          setTimeout(() => { if (!speakingRef.current) startVoice(); }, 400);
-        }
-      };
-      window.speechSynthesis.speak(u);
-    } catch(e) { console.warn("TTS error", e); }
-  }
+  function speak() { /* TTS無効 */ }
 
   // 店員メッセージを表示＆発話、5秒後に消える
   function showClerk(reply) {
     setClerkReply(reply);
-    speak(reply);
     clearTimeout(clerkTimerRef.current);
     clerkTimerRef.current = setTimeout(() => setClerkReply(""), 14000);
   }
@@ -1627,14 +1605,7 @@ ${window.MENU.map(m => `・${m.nameJa}（${m.id}）= ${m.tickets}チケット`).
           })}
         </nav>
         <div style={{ display:"flex", alignItems:"center", gap:14 }}>
-          {/* 音声テストボタン */}
-          <button
-            onClick={()=>{ ttsWarmRef.current = true; speak("音声テスト、こんにちは！"); }}
-            style={{ padding:"5px 11px", fontSize:12, borderRadius:8, border:"1px solid rgba(255,255,255,0.4)", background:"rgba(255,255,255,0.18)", color:"#fff", cursor:"pointer" }}
-          >
-            🔊 音声テスト
-          </button>
-          {cartCount>0 && <button onClick={()=>setScreen("cart")} style={{ display:"flex", alignItems:"center", gap:7, padding:"6px 14px", background:"var(--bg-3)", borderRadius:8, border:"none", cursor:"pointer", fontSize:13 }}>{window.Icon.cart(14)}<span className="mono num" style={{ fontWeight:600 }}>{cartCount}</span></button>}
+          {cartCount>0 &&<button onClick={()=>setScreen("cart")} style={{ display:"flex", alignItems:"center", gap:7, padding:"6px 14px", background:"var(--bg-3)", borderRadius:8, border:"none", cursor:"pointer", fontSize:13 }}>{window.Icon.cart(14)}<span className="mono num" style={{ fontWeight:600 }}>{cartCount}</span></button>}
 
           {/* APIキー設定 */}
           <div style={{ position:"relative" }}>

@@ -1210,6 +1210,43 @@ function App() {
 
   // テキストを音声で読み上げる（話してる間はマイク停止）
   const speakingRef = useRef3(false);
+  const ttsWarmRef = useRef3(false);
+
+  // iOS Safari: 初回ユーザー操作で TTS をアンロックする
+  useEffect3(() => {
+    const warmup = () => {
+      if (ttsWarmRef.current || !window.speechSynthesis) return;
+      try {
+        // 無音の発話で TTS を起こす
+        const u = new SpeechSynthesisUtterance(" ");
+        u.volume = 0; u.lang = "ja-JP";
+        window.speechSynthesis.speak(u);
+        ttsWarmRef.current = true;
+      } catch(e) {}
+      window.removeEventListener("pointerdown", warmup);
+      window.removeEventListener("touchstart", warmup);
+    };
+    window.addEventListener("pointerdown", warmup, { once: true });
+    window.addEventListener("touchstart", warmup, { once: true });
+    return () => {
+      window.removeEventListener("pointerdown", warmup);
+      window.removeEventListener("touchstart", warmup);
+    };
+  }, []);
+
+  // 日本語ボイスをキャッシュ
+  const jaVoiceRef = useRef3(null);
+  useEffect3(() => {
+    const pickVoice = () => {
+      const voices = window.speechSynthesis?.getVoices?.() || [];
+      jaVoiceRef.current = voices.find(v => v.lang?.startsWith("ja") && /female|woman|kyoko|otoya|haruka|nanami|sayaka/i.test(v.name))
+        || voices.find(v => v.lang?.startsWith("ja"))
+        || null;
+    };
+    pickVoice();
+    if (window.speechSynthesis) window.speechSynthesis.onvoiceschanged = pickVoice;
+  }, []);
+
   function speak(text) {
     if (!text || !window.speechSynthesis) return;
     try {
@@ -1217,14 +1254,14 @@ function App() {
       const u = new SpeechSynthesisUtterance(text);
       const isJa = /[぀-ヿ㐀-鿿]/.test(text);
       u.lang = isJa ? "ja-JP" : "en-US";
-      u.rate = 1.05; u.pitch = 1.1;
+      if (isJa && jaVoiceRef.current) u.voice = jaVoiceRef.current;
+      u.rate = 1.05; u.pitch = 1.1; u.volume = 1;
       u.onstart = () => {
         speakingRef.current = true;
-        stopVoice(); // 喋ってる間はマイク止める（自分の声を拾わない）
+        stopVoice();
       };
       u.onend = u.onerror = () => {
         speakingRef.current = false;
-        // 喋り終わったら少し待ってから再開（残響対策）
         if (screenRef.current === "home" || screenRef.current === "confirm") {
           setTimeout(() => { if (!speakingRef.current) startVoice(); }, 400);
         }

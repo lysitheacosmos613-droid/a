@@ -1197,16 +1197,27 @@ function App() {
   const [clerkReply, setClerkReply] = useState3(""); // 店員からの返答メッセージ
   const clerkTimerRef = useRef3(null);
 
-  // テキストを音声で読み上げる（言語自動判定）
+  // テキストを音声で読み上げる（話してる間はマイク停止）
+  const speakingRef = useRef3(false);
   function speak(text) {
     if (!text || !window.speechSynthesis) return;
     try {
       window.speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(text);
-      // ひらがな/カタカナ/漢字があれば日本語、なければ英語
       const isJa = /[぀-ヿ㐀-鿿]/.test(text);
       u.lang = isJa ? "ja-JP" : "en-US";
       u.rate = 1.05; u.pitch = 1.1;
+      u.onstart = () => {
+        speakingRef.current = true;
+        stopVoice(); // 喋ってる間はマイク止める（自分の声を拾わない）
+      };
+      u.onend = u.onerror = () => {
+        speakingRef.current = false;
+        // 喋り終わったら少し待ってから再開（残響対策）
+        if (screenRef.current === "home" || screenRef.current === "confirm") {
+          setTimeout(() => { if (!speakingRef.current) startVoice(); }, 400);
+        }
+      };
       window.speechSynthesis.speak(u);
     } catch(e) { console.warn("TTS error", e); }
   }

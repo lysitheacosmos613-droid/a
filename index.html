@@ -1179,7 +1179,34 @@ function App() {
   const [showKeyInput, setShowKeyInput] = useState3(false);
   const [parsing, setParsing] = useState3(false);
   const [clerkReply, setClerkReply] = useState3(""); // 店員からの返答メッセージ
+  const [clerkShown, setClerkShown] = useState3(""); // 表示用（フェードラグ）
+  const [clerkPhase, setClerkPhase] = useState3("hidden"); // hidden | in | out
   const clerkTimerRef = useRef3(null);
+
+  // クロスフェード遷移
+  useEffect3(() => {
+    if (clerkReply && clerkReply !== clerkShown) {
+      if (clerkShown) {
+        // 既存メッセージをフェードアウトしてから新しいのを表示
+        setClerkPhase("out");
+        const t = setTimeout(() => {
+          setClerkShown(clerkReply);
+          setClerkPhase("in");
+        }, 280);
+        return () => clearTimeout(t);
+      } else {
+        setClerkShown(clerkReply);
+        setClerkPhase("in");
+      }
+    } else if (!clerkReply && clerkShown) {
+      setClerkPhase("out");
+      const t = setTimeout(() => {
+        setClerkShown("");
+        setClerkPhase("hidden");
+      }, 280);
+      return () => clearTimeout(t);
+    }
+  }, [clerkReply, clerkShown]);
 
   // テキストを音声で読み上げる（話してる間はマイク停止）
   const speakingRef = useRef3(false);
@@ -1612,17 +1639,23 @@ ${window.MENU.map(m => `・${m.nameJa}（${m.id}）= ${m.tickets}チケット`).
         }
       }}/>}
 
-      {/* 店員吹き出し */}
-      {clerkReply && (
-        <div style={{ position:"fixed", bottom:40, left:"50%", transform:"translateX(-50%)", zIndex:150, maxWidth:1100, width:"calc(100% - 60px)", padding:"40px 52px", background:"#fff", border:"1px solid var(--line)", borderRadius:32, boxShadow:"0 20px 60px rgba(0,0,0,.15)", animation:"clerk-pop .3s ease" }}>
+      {/* 店員吹き出し（クロスフェード） */}
+      {clerkShown && (
+        <div style={{
+          position:"fixed", bottom:40, left:"50%",
+          transform: `translateX(-50%) translateY(${clerkPhase==="in"?"0":"16px"})`,
+          opacity: clerkPhase==="in" ? 1 : 0,
+          transition: "opacity .28s ease, transform .32s cubic-bezier(.2,1,.3,1)",
+          zIndex:150, maxWidth:1100, width:"calc(100% - 60px)",
+          padding:"40px 52px", background:"#fff", border:"1px solid var(--line)", borderRadius:32, boxShadow:"0 20px 60px rgba(0,0,0,.15)",
+        }}>
           <div style={{ display:"flex", alignItems:"center", gap:28 }}>
             <img src="deli_hibi.png" alt="店員" style={{ width:120, height:120, borderRadius:24, flexShrink:0, objectFit:"cover", background:"#ff7a1a" }} onError={(e)=>{ e.target.style.display="none"; }} />
             <div style={{ flex:1, minWidth:0 }}>
               <div className="mono" style={{ fontSize:13, color:"var(--mute)", letterSpacing:"0.28em", marginBottom:12 }}>STAFF · DELI HIBI</div>
-              <div style={{ fontSize:52, fontWeight:500, lineHeight:1.45, color:"var(--ink)" }}>{clerkReply}</div>
+              <div style={{ fontSize:52, fontWeight:500, lineHeight:1.45, color:"var(--ink)" }}>{clerkShown}</div>
             </div>
           </div>
-          <style>{`@keyframes clerk-pop { from { transform: translateX(-50%) translateY(20px); opacity:0; } to { transform: translateX(-50%) translateY(0); opacity:1; } }`}</style>
         </div>
       )}
 

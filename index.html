@@ -1217,10 +1217,10 @@ function App() {
     const warmup = () => {
       if (ttsWarmRef.current || !window.speechSynthesis) return;
       try {
-        // 短く実音の発話で iOS の TTS 権限を獲得
+        // 無音発話で iOS の TTS 権限を獲得（音は鳴らない）
         window.speechSynthesis.cancel();
-        const u = new SpeechSynthesisUtterance("ー");
-        u.volume = 0.5; u.rate = 10; u.lang = "ja-JP";
+        const u = new SpeechSynthesisUtterance(" ");
+        u.volume = 0; u.rate = 10; u.lang = "ja-JP";
         u.onend = () => { ttsWarmRef.current = true; };
         u.onstart = () => { ttsWarmRef.current = true; };
         window.speechSynthesis.speak(u);

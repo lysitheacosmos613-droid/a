@@ -46,7 +46,7 @@
     #root { min-height: 100%; }
   </style>
 </head>
-<body style="background-color: #fbfaf3">
+<body style="background-color: #ff7a1a">
   <div id="root"></div>
 
   <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
@@ -653,50 +653,33 @@ function HomeScreen({ t, transcript, isListening }) {
         ))}
       </div>
 
-      <div style={{ position:"relative", zIndex:2, textAlign:"center", maxWidth:1200, pointerEvents:"none" }}>
-        <div className="mono" style={{ fontSize:18, color:"var(--mute)", letterSpacing:"0.32em" }}>WELCOME · {new Date().toLocaleDateString("ja-JP")}</div>
-        <h1
-          ref={headRef}
-          key={hitFlash}
-          style={{
-            marginTop:36, fontSize:"clamp(88px, 9.5vw, 144px)", lineHeight:1.0, letterSpacing:"0.01em",
-            fontWeight:500, whiteSpace:"nowrap", display:"inline-block",
-            animation: hitFlash ? "jiggle .45s cubic-bezier(.36,.07,.19,.97)" : "none",
-          }}
-        >
-          {t.welcome}
-        </h1>
-        <style>{`@keyframes jiggle { 0%{transform:translate(0,0) rotate(0);} 15%{transform:translate(-4px,2px) rotate(-2deg) scale(1.04);} 30%{transform:translate(5px,-3px) rotate(2deg) scale(0.98);} 50%{transform:translate(-3px,1px) rotate(-1deg) scale(1.02);} 70%{transform:translate(2px,-1px) rotate(1deg);} 100%{transform:translate(0,0) rotate(0);} }`}</style>
-        <p ref={subRef} style={{ marginTop:32, fontSize:28, color:"var(--mute)", lineHeight:1.6, display:"inline-block" }}>{t.welcomeSub}</p>
+      <div ref={headRef} key={hitFlash} style={{
+        position:"relative", zIndex:2, textAlign:"center", pointerEvents:"none",
+        animation: hitFlash ? "jiggle .45s cubic-bezier(.36,.07,.19,.97)" : "none",
+      }}>
+        <img src="deli_hibi.png" alt="DELI HIBI" style={{ width:"min(54vw, 520px)", height:"auto", display:"block", margin:"0 auto", filter:"drop-shadow(0 10px 30px rgba(0,0,0,0.18))" }} onError={(e)=>{ e.target.style.display="none"; }}/>
         {/* 音声波形アニメ */}
-        <div style={{ marginTop:56, display:"flex", flexDirection:"column", alignItems:"center", gap:14 }}>
+        <div style={{ marginTop:36, display:"flex", flexDirection:"column", alignItems:"center", gap:14 }}>
           <div style={{ display:"flex", gap:6, alignItems:"center", height:56 }}>
             {[0.35,0.6,0.85,1.0,0.75,0.9,0.5,0.7,0.4].map((h,i) => (
               <div key={i} style={{
                 width:5, borderRadius:3,
                 height: `${h*56}px`,
-                background: isListening ? "var(--blue)" : "var(--mute-2)",
+                background: isListening ? "#fff" : "rgba(255,255,255,0.45)",
                 animation: isListening ? `wave-bar ${0.5+i*0.07}s ease-in-out infinite alternate` : "none",
                 animationDelay: `${i*0.06}s`,
                 transition: "background .3s",
               }}/>
             ))}
           </div>
-          <div className="mono" style={{ fontSize:16, letterSpacing:"0.28em", color: isListening ? "var(--blue)" : "var(--mute)" }}>
+          <div className="mono" style={{ fontSize:16, letterSpacing:"0.28em", color: isListening ? "#fff" : "rgba(255,255,255,0.7)" }}>
             {isListening ? "● LISTENING" : "● STANDBY"}
           </div>
         </div>
-        <style>{`@keyframes wave-bar { from { transform: scaleY(0.25); } to { transform: scaleY(1); } }`}</style>
-
-        {transcript ? (
-          <div ref={transcriptRef} style={{ marginTop:36, padding:"28px 48px", background:"rgba(255,255,255,0.8)", backdropFilter:"blur(8px)", border:"1px solid var(--line)", borderRadius:20, maxWidth:900, width:"100%", display:"inline-block" }}>
-            <div style={{ fontSize:36, fontWeight:500, lineHeight:1.55, color:"var(--ink)" }}>
-              「{transcript}<span style={{ display:"inline-block", width:3, height:32, background:"var(--blue)", verticalAlign:"middle", marginLeft:6 }}/>」
-            </div>
-          </div>
-        ) : (
-          <div className="mono" style={{ marginTop:36, fontSize:18, color:"var(--mute-2)", letterSpacing:"0.18em" }}>{t.examplePrompt}</div>
-        )}
+        <style>{`
+          @keyframes wave-bar { from { transform: scaleY(0.25); } to { transform: scaleY(1); } }
+          @keyframes jiggle { 0%{transform:translate(0,0) rotate(0);} 15%{transform:translate(-4px,2px) rotate(-2deg) scale(1.04);} 30%{transform:translate(5px,-3px) rotate(2deg) scale(0.98);} 50%{transform:translate(-3px,1px) rotate(-1deg) scale(1.02);} 70%{transform:translate(2px,-1px) rotate(1deg);} 100%{transform:translate(0,0) rotate(0);} }
+        `}</style>
       </div>
     </section>
   );
@@ -1487,8 +1470,8 @@ ${window.MENU.map(m => `・${m.nameJa}（${m.id}）= ${m.tickets}チケット`).
 
       clearTimeout(silenceRef.current);
       if (unprocessed.trim()) {
-        // 段落区切りが取れている (final 完了) → 600ms / interim only → 1300ms
-        const delay = newFinalAvailable ? 600 : 1300;
+        // 4秒の無音で区切る（final 確定済みなら 4000、まだinterim中なら 4500）
+        const delay = newFinalAvailable ? 4000 : 4500;
         silenceRef.current = setTimeout(() => {
           const toProcess = (curFinal + curInterim).slice(processedLen);
           processedLen = curFinal.length;
@@ -1563,7 +1546,7 @@ ${window.MENU.map(m => `・${m.nameJa}（${m.id}）= ${m.tickets}チケット`).
     <div style={{ minHeight:"100vh", display:"flex", flexDirection:"column" }}>
       <header style={{ position:"sticky", top:0, zIndex:50, height:64, background:"rgba(255,255,255,0.96)", backdropFilter:"blur(8px)", borderBottom:"1px solid var(--line)", display:"flex", alignItems:"center", padding:"0 32px", gap:24 }}>
         <button onClick={()=>setScreen("home")} style={{ display:"flex", alignItems:"baseline", gap:8 }}>
-          <span style={{ fontSize:16, fontWeight:700, letterSpacing:"0.08em" }}>MILK STAND</span>
+          <span style={{ fontSize:16, fontWeight:700, letterSpacing:"0.08em", color:"#ff7a1a" }}>DELI HIBI</span>
         </button>
         <nav style={{ flex:1, display:"flex", justifyContent:"center", gap:2 }}>
           {NAV.map((tab)=>{

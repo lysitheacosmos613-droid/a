@@ -658,7 +658,7 @@ function HomeScreen({ t, transcript, isListening }) {
         alignSelf:"flex-start", marginLeft:"4vw",
         animation: hitFlash ? "jiggle .45s cubic-bezier(.36,.07,.19,.97)" : "none",
       }}>
-        <img src="deli_hibi.png" alt="DELI HIBI" style={{ width:"min(80vw, 900px)", height:"auto", display:"block", filter:"drop-shadow(0 14px 40px rgba(0,0,0,0.22))" }} onError={(e)=>{ e.target.style.display="none"; }}/>
+        <img src="deli_hibi.png" alt="DELI HIBI" style={{ width:"min(48vw, 480px)", height:"auto", display:"block", filter:"drop-shadow(0 10px 30px rgba(0,0,0,0.18))" }} onError={(e)=>{ e.target.style.display="none"; }}/>
         {/* 音声波形アニメ */}
         <div style={{ marginTop:36, display:"flex", flexDirection:"column", alignItems:"center", gap:14 }}>
           <div style={{ display:"flex", gap:6, alignItems:"center", height:56 }}>
@@ -1614,12 +1614,12 @@ ${window.MENU.map(m => `・${m.nameJa}（${m.id}）= ${m.tickets}チケット`).
 
       {/* 店員吹き出し */}
       {clerkReply && (
-        <div style={{ position:"fixed", bottom:40, left:"50%", transform:"translateX(-50%)", zIndex:150, maxWidth:900, width:"calc(100% - 80px)", padding:"32px 40px", background:"#fff", border:"1px solid var(--line)", borderRadius:28, boxShadow:"0 20px 60px rgba(0,0,0,.15)", animation:"clerk-pop .3s ease" }}>
-          <div style={{ display:"flex", alignItems:"center", gap:24 }}>
-            <img src="deli_hibi.png" alt="店員" style={{ width:96, height:96, borderRadius:20, flexShrink:0, objectFit:"cover", background:"#ff7a1a" }} onError={(e)=>{ e.target.style.display="none"; }} />
+        <div style={{ position:"fixed", bottom:40, left:"50%", transform:"translateX(-50%)", zIndex:150, maxWidth:1100, width:"calc(100% - 60px)", padding:"40px 52px", background:"#fff", border:"1px solid var(--line)", borderRadius:32, boxShadow:"0 20px 60px rgba(0,0,0,.15)", animation:"clerk-pop .3s ease" }}>
+          <div style={{ display:"flex", alignItems:"center", gap:28 }}>
+            <img src="deli_hibi.png" alt="店員" style={{ width:120, height:120, borderRadius:24, flexShrink:0, objectFit:"cover", background:"#ff7a1a" }} onError={(e)=>{ e.target.style.display="none"; }} />
             <div style={{ flex:1, minWidth:0 }}>
-              <div className="mono" style={{ fontSize:11, color:"var(--mute)", letterSpacing:"0.28em", marginBottom:8 }}>STAFF · DELI HIBI</div>
-              <div style={{ fontSize:32, fontWeight:500, lineHeight:1.5, color:"var(--ink)" }}>{clerkReply}</div>
+              <div className="mono" style={{ fontSize:13, color:"var(--mute)", letterSpacing:"0.28em", marginBottom:12 }}>STAFF · DELI HIBI</div>
+              <div style={{ fontSize:52, fontWeight:500, lineHeight:1.45, color:"var(--ink)" }}>{clerkReply}</div>
             </div>
           </div>
           <style>{`@keyframes clerk-pop { from { transform: translateX(-50%) translateY(20px); opacity:0; } to { transform: translateX(-50%) translateY(0); opacity:1; } }`}</style>

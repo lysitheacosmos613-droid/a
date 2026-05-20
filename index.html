@@ -654,10 +654,11 @@ function HomeScreen({ t, transcript, isListening }) {
       </div>
 
       <div ref={headRef} key={hitFlash} style={{
-        position:"relative", zIndex:2, textAlign:"center", pointerEvents:"none",
+        position:"relative", zIndex:2, textAlign:"left", pointerEvents:"none",
+        alignSelf:"flex-start", marginLeft:"4vw",
         animation: hitFlash ? "jiggle .45s cubic-bezier(.36,.07,.19,.97)" : "none",
       }}>
-        <img src="deli_hibi.png" alt="DELI HIBI" style={{ width:"min(54vw, 520px)", height:"auto", display:"block", margin:"0 auto", filter:"drop-shadow(0 10px 30px rgba(0,0,0,0.18))" }} onError={(e)=>{ e.target.style.display="none"; }}/>
+        <img src="deli_hibi.png" alt="DELI HIBI" style={{ width:"min(48vw, 480px)", height:"auto", display:"block", filter:"drop-shadow(0 10px 30px rgba(0,0,0,0.18))" }} onError={(e)=>{ e.target.style.display="none"; }}/>
         {/* 音声波形アニメ */}
         <div style={{ marginTop:36, display:"flex", flexDirection:"column", alignItems:"center", gap:14 }}>
           <div style={{ display:"flex", gap:6, alignItems:"center", height:56 }}>
@@ -1544,14 +1545,14 @@ ${window.MENU.map(m => `・${m.nameJa}（${m.id}）= ${m.tickets}チケット`).
 
   return (
     <div style={{ minHeight:"100vh", display:"flex", flexDirection:"column" }}>
-      <header style={{ position:"sticky", top:0, zIndex:50, height:64, background:"rgba(255,255,255,0.96)", backdropFilter:"blur(8px)", borderBottom:"1px solid var(--line)", display:"flex", alignItems:"center", padding:"0 32px", gap:24 }}>
+      <header style={{ position:"sticky", top:0, zIndex:50, height:64, background:"#ff7a1a", borderBottom:"1px solid rgba(0,0,0,0.08)", display:"flex", alignItems:"center", padding:"0 32px", gap:24 }}>
         <button onClick={()=>setScreen("home")} style={{ display:"flex", alignItems:"baseline", gap:8 }}>
-          <span style={{ fontSize:16, fontWeight:700, letterSpacing:"0.08em", color:"#ff7a1a" }}>DELI HIBI</span>
+          <span style={{ fontSize:16, fontWeight:700, letterSpacing:"0.08em", color:"#fff" }}>DELI HIBI</span>
         </button>
         <nav style={{ flex:1, display:"flex", justifyContent:"center", gap:2 }}>
           {NAV.map((tab)=>{
             const active=screen===tab.key;
-            return <button key={tab.key} onClick={()=>setScreen(tab.key)} style={{ padding:"6px 20px", borderRadius:8, fontSize:14, fontWeight:active?600:400, color:active?"var(--ink)":"var(--mute)", background:active?"var(--bg-3)":"transparent", transition:"all .15s", border:"none", cursor:"pointer" }}>{tab.label}</button>;
+            return <button key={tab.key} onClick={()=>setScreen(tab.key)} style={{ padding:"6px 20px", borderRadius:8, fontSize:14, fontWeight:active?600:400, color:active?"#ff7a1a":"rgba(255,255,255,0.85)", background:active?"#fff":"transparent", transition:"all .15s", border:"none", cursor:"pointer" }}>{tab.label}</button>;
           })}
         </nav>
         <div style={{ display:"flex", alignItems:"center", gap:14 }}>

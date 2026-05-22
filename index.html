@@ -217,13 +217,22 @@ Object.assign(window, {
   <!-- data -->
   <script type="text/babel">
 const MENU = [
-  { id: "milk",    nameJa: "牛乳",       nameEn: "Fresh Milk", subJa: "瓶詰め・冷",    subEn: "Bottled, Cold",         tickets: 1, swatch: "#F4F1EA" },
-  { id: "pancake", nameJa: "パンケーキ", nameEn: "Pancake",    subJa: "発酵バター添え", subEn: "With cultured butter",  tickets: 3, swatch: "#F1E8D8" },
-  { id: "pudding", nameJa: "プリン",     nameEn: "Pudding",    subJa: "瓶入り・濃厚",  subEn: "Jarred, rich",          tickets: 2, swatch: "#F6E9C9" },
-  { id: "rusk",    nameJa: "ラスク",     nameEn: "Rusk",       subJa: "薄焼き・5枚",   subEn: "Thin, 5 pcs",           tickets: 2, swatch: "#EFE3CD" },
-  { id: "gelato",  nameJa: "ジェラート", nameEn: "Gelato",     subJa: "本日のフレーバー", subEn: "Today's flavor",      tickets: 2, swatch: "#EFEFEF" },
+  { id: "milk",    nameJa: "みるしず",          nameEn: "Mirushizu",          subJa: "静岡牛乳協同組合",                          subEn: "Shizuoka Milk Cooperative",          tickets: 1,                             swatch: "#F4F1EA" },
+  { id: "pancake", nameJa: "パンケーキ",          nameEn: "Pancake",            subJa: "玉川産全粒粉・美黄卵・みるしず使用",           subEn: "Whole wheat, Biko egg & Mirushizu",  tickets: 3,                             swatch: "#F1E8D8" },
+  { id: "pudding", nameJa: "きみまるプリン",       nameEn: "Kimimaru Pudding",   subJa: "清水養鶏 · 1個◈2 / 2個◈3",               subEn: "Shimizu Farm · 1pc ◈2 / 2pcs ◈3",  tickets: 2, bundleQty: 2, bundleTickets: 3, swatch: "#F6E9C9" },
+  { id: "rusk",    nameJa: "ザクザク富士ラスク",   nameEn: "Zakuzaku Fuji Rusk", subJa: "プレーン・ストロベリー・アーモンドキャラメル", subEn: "Plain / Strawberry / Almond Caramel", tickets: 3,                             swatch: "#EFE3CD" },
+  { id: "gelato",  nameJa: "ジェラート",          nameEn: "Gelato",             subJa: "gelaturri",                              subEn: "gelaturri",                          tickets: 3,                             swatch: "#EFEFEF" },
 ];
 const MENU_MAP = Object.fromEntries(MENU.map((m) => [m.id, m]));
+
+function calcTickets(item, qty) {
+  if (!item || !qty) return 0;
+  if (item.bundleQty && item.bundleTickets) {
+    return Math.floor(qty / item.bundleQty) * item.bundleTickets + (qty % item.bundleQty) * item.tickets;
+  }
+  return item.tickets * qty;
+}
+window.calcTickets = calcTickets;
 
 const STRINGS = {
   ja: {
@@ -243,7 +252,7 @@ const STRINGS = {
     item: "点", thankYou: "ありがとうございました",
     thankYouSub: "またのお越しをお待ちしております",
     orderNo: "注文番号", now: "ただいま", minAgo: "分前",
-    examplePrompt: "例：「牛乳を2本と、プリンをひとつ」",
+    examplePrompt: "例：「みるしずを2本と、きみまるプリンをひとつ」",
     nav: { home: "ホーム", products: "商品", history: "履歴" },
   },
   en: {
@@ -724,7 +733,7 @@ function ListeningScreen({ t, lang, transcript, parseProgress, isListening, onRe
 }
 
 function ConfirmScreen({ t, lang, items, transcript, isListening, orderQueue, onEdit, onComplete }) {
-  const total = items.reduce((s, it) => s + window.MENU_MAP[it.id].tickets * it.qty, 0);
+  const total = items.reduce((s, it) => s + window.calcTickets(window.MENU_MAP[it.id], it.qty), 0);
   return (
     <section data-screen-label="03 ご注文確認" style={{ padding:"48px 80px 40px" }}>
       {/* ヘッダー */}
@@ -758,10 +767,10 @@ function ConfirmScreen({ t, lang, items, transcript, isListening, orderQueue, on
                 <div>
                   <div style={{ fontSize:17, fontWeight:600 }}>{lang==="ja"?m.nameJa:m.nameEn}</div>
                   <div style={{ fontSize:11, color:"var(--mute)", marginTop:3 }}>{lang==="ja"?m.subJa:m.subEn}</div>
-                  <div className="mono num" style={{ fontSize:11, color:"var(--mute)", marginTop:5 }}>◈ {m.tickets} × {it.qty}</div>
+                  <div className="mono num" style={{ fontSize:11, color:"var(--mute)", marginTop:5 }}>◈ {m.bundleQty ? `${it.qty}個 → ${window.calcTickets(m,it.qty)}` : `${m.tickets} × ${it.qty}`}</div>
                 </div>
                 <window.QtyStepper value={it.qty} onChange={(v)=>onEdit(it.id,v)}/>
-                <div className="mono num" style={{ fontSize:18, fontWeight:600, minWidth:80, textAlign:"right" }}>◈ {m.tickets*it.qty}</div>
+                <div className="mono num" style={{ fontSize:18, fontWeight:600, minWidth:80, textAlign:"right" }}>◈ {window.calcTickets(m,it.qty)}</div>
               </div>
             );
           })}
@@ -797,7 +806,7 @@ function ConfirmScreen({ t, lang, items, transcript, isListening, orderQueue, on
           </div>
           <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
             {orderQueue.map((qItems, qi) => {
-              const qTotal = qItems.reduce((s,it)=>s+(window.MENU_MAP[it.id]?.tickets||0)*it.qty, 0);
+              const qTotal = qItems.reduce((s,it)=>s+window.calcTickets(window.MENU_MAP[it.id],it.qty), 0);
               return (
                 <div key={qi} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"16px 20px", background:"var(--bg-2)", border:"1px solid var(--line)", borderRadius:10, opacity: 0.8 }}>
                   <div style={{ display:"flex", alignItems:"center", gap:8 }}>
@@ -828,7 +837,7 @@ function ProductsScreen({ t, lang, cart, onChange, onCheckout, onAddItem, onRemo
   const { useState: useStateP } = React;
   const [showAdd, setShowAdd] = useStateP(false);
   const [form, setForm] = useStateP({ nameJa:"", nameEn:"", subJa:"", subEn:"", tickets:1, emoji:"🍰", swatch:"#ffe9d6" });
-  const totalTickets = Object.entries(cart).reduce((s,[id,q])=>s+(window.MENU_MAP[id]?.tickets||0)*q,0);
+  const totalTickets = Object.entries(cart).reduce((s,[id,q])=>s+window.calcTickets(window.MENU_MAP[id],q),0);
   const itemCount = Object.values(cart).reduce((s,q)=>s+q,0);
   const items = window.MENU;
 
@@ -937,7 +946,7 @@ function ProductCard({ t, lang, item, qty, onChange }) {
 }
 
 function CartScreen({ t, lang, items, ticketBalance = 20, onBack, onPay }) {
-  const total = items.reduce((s,it)=>s+window.MENU_MAP[it.id].tickets*it.qty,0);
+  const total = items.reduce((s,it)=>s+window.calcTickets(window.MENU_MAP[it.id],it.qty),0);
   const remain = ticketBalance - total;
   const insufficient = remain < 0;
   return (
@@ -952,7 +961,7 @@ function CartScreen({ t, lang, items, ticketBalance = 20, onBack, onPay }) {
           <div style={{ border:"1px solid var(--line)", borderRadius:12, padding:24, marginBottom:24 }}>
             <div className="mono" style={{ fontSize:10, color:"var(--mute)", letterSpacing:"0.26em", marginBottom:16 }}>YOUR ITEMS</div>
             <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
-              {items.map((it)=>{const m=window.MENU_MAP[it.id];return <div key={it.id} style={{ display:"flex", alignItems:"center", gap:14 }}><div style={{ width:40, height:40, borderRadius:6, overflow:"hidden", flexShrink:0 }}><window.ProductIllustration item={m} size={40}/></div><div style={{ flex:1 }}><div style={{ fontSize:14, fontWeight:500 }}>{lang==="ja"?m.nameJa:m.nameEn}</div><div className="mono num" style={{ fontSize:11, color:"var(--mute)" }}>◈ {m.tickets} × {it.qty}</div></div><div className="mono num" style={{ fontSize:16, fontWeight:600 }}>◈ {m.tickets*it.qty}</div></div>;})}
+              {items.map((it)=>{const m=window.MENU_MAP[it.id];return <div key={it.id} style={{ display:"flex", alignItems:"center", gap:14 }}><div style={{ width:40, height:40, borderRadius:6, overflow:"hidden", flexShrink:0 }}><window.ProductIllustration item={m} size={40}/></div><div style={{ flex:1 }}><div style={{ fontSize:14, fontWeight:500 }}>{lang==="ja"?m.nameJa:m.nameEn}</div><div className="mono num" style={{ fontSize:11, color:"var(--mute)" }}>◈ {m.bundleQty ? `${it.qty}個 → ${window.calcTickets(m,it.qty)}` : `${m.tickets} × ${it.qty}`}</div></div><div className="mono num" style={{ fontSize:16, fontWeight:600 }}>◈ {window.calcTickets(m,it.qty)}</div></div>;})}
               {items.length===0 && <div style={{ padding:24, textAlign:"center", color:"var(--mute)" }}>カートに商品がありません</div>}
             </div>
           </div>
@@ -988,7 +997,7 @@ function CartScreen({ t, lang, items, ticketBalance = 20, onBack, onPay }) {
 function HistoryScreen({ t, lang, history, onClear }) {
   const { useState: useStateH } = React;
   const [confirming, setConfirming] = useStateH(false);
-  const totalTickets = history.reduce((s,h)=>s+h.items.reduce((a,b)=>a+(window.MENU_MAP[b.id]?.tickets||0)*b.qty,0),0);
+  const totalTickets = history.reduce((s,h)=>s+h.items.reduce((a,b)=>a+window.calcTickets(window.MENU_MAP[b.id],b.qty),0),0);
   return (
     <section data-screen-label="06 履歴" style={{ padding:"48px 80px 40px" }}>
       <div style={{ display:"flex", alignItems:"flex-end", justifyContent:"space-between", marginBottom:32 }}>
@@ -1030,7 +1039,7 @@ function HistoryScreen({ t, lang, history, onClear }) {
       <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
         {history.map((h)=>{
           const tone=h.status==="ready"?"blue":"ok", label=h.status==="ready"?t.ready:t.done;
-          const total=h.items.reduce((s,it)=>s+(window.MENU_MAP[it.id]?.tickets||0)*it.qty,0);
+          const total=h.items.reduce((s,it)=>s+window.calcTickets(window.MENU_MAP[it.id],it.qty),0);
           return <div key={h.id} style={{ display:"grid", gridTemplateColumns:"100px 120px 1fr auto", alignItems:"center", gap:24, padding:"20px 24px", border:"1px solid var(--line)", borderRadius:10, background:"#fff" }}>
             <div><div className="mono" style={{ fontSize:10, color:"var(--mute)", letterSpacing:"0.24em" }}>{t.orderNo}</div><div className="mono num" style={{ fontSize:18, fontWeight:600, marginTop:2 }}>#{h.id}</div></div>
             <div><window.Badge tone={tone}>{label}</window.Badge><div className="mono" style={{ fontSize:11, color:"var(--mute)", marginTop:8 }}>{h.minAgo===0?t.now:`${h.minAgo} ${t.minAgo}`}</div></div>
@@ -1468,7 +1477,7 @@ ${window.MENU.map(m => `・${m.nameJa}（${m.id}）= ${m.tickets}チケット`).
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) {
       // フォールバック：シミュレーション
-      const phrases = ["牛乳を2本と、プリンをひとつ","パンケーキひとつください","ジェラートを2つとラスクをひとつ"];
+      const phrases = ["みるしずを2本と、きみまるプリンをひとつ","パンケーキひとつください","ジェラートをひとつとラスクをひとつ"];
       const phrase = phrases[Math.floor(Math.random()*phrases.length)];
       let i = 0;
       const timer = setInterval(() => {

@@ -1176,6 +1176,7 @@ function App() {
   const orderQueueRef = useRef3([]);
   const afterThankYouRef = useRef3([]); // ThankYou後に昇格するキュー
   const [apiKey, setApiKey] = useState3(() => localStorage.getItem("ms_api_key") || "");
+  const [model, setModel] = useState3(() => localStorage.getItem("ms_model") || "claude-haiku-4-5-20251001");
   const [showKeyInput, setShowKeyInput] = useState3(false);
   const [parsing, setParsing] = useState3(false);
   const [clerkReply, setClerkReply] = useState3(""); // 店員からの返答メッセージ
@@ -1341,7 +1342,7 @@ ${window.MENU.map(m => `・${m.nameJa}（${m.id} / ${m.nameEn}）= ${m.tickets}�
         method: "POST",
         headers: { "Content-Type":"application/json", "x-api-key":key, "anthropic-version":"2023-06-01", "anthropic-dangerous-direct-browser-access":"true" },
         body: JSON.stringify({
-          model: "claude-haiku-4-5-20251001",
+          model: localStorage.getItem("ms_model") || "claude-haiku-4-5-20251001",
           max_tokens: 200,
           system: [{ type:"text", text: SYSTEM_HOME, cache_control:{ type:"ephemeral" } }],
           messages: [{ role:"user", content: `発話:「${text}」` }],
@@ -1419,7 +1420,7 @@ ${window.MENU.map(m => `・${m.nameJa}（${m.id}）= ${m.tickets}チケット`).
         method: "POST",
         headers: { "Content-Type":"application/json", "x-api-key":key, "anthropic-version":"2023-06-01", "anthropic-dangerous-direct-browser-access":"true" },
         body: JSON.stringify({
-          model: "claude-haiku-4-5-20251001",
+          model: localStorage.getItem("ms_model") || "claude-haiku-4-5-20251001",
           max_tokens: 200,
           system: [{ type:"text", text: SYSTEM_CONFIRM, cache_control:{ type:"ephemeral" } }],
           messages: [{ role:"user", content: `現在の注文: ${currentStr}\n発話:「${text}」` }],
@@ -1638,6 +1639,18 @@ ${window.MENU.map(m => `・${m.nameJa}（${m.id}）= ${m.tickets}チケット`).
                   style={{ width:"100%", padding:"7px 10px", borderRadius:7, border:"1px solid var(--line)", fontSize:13, outline:"none" }}
                 />
                 <div style={{ fontSize:11, color:"var(--mute)", marginTop:6 }}>キーはlocalStorageに保存されます。</div>
+                <div style={{ marginTop:10 }}>
+                  <div style={{ fontSize:12, fontWeight:600, marginBottom:6 }}>AIモデル</div>
+                  <select
+                    value={model}
+                    onChange={e=>{ const v=e.target.value; setModel(v); localStorage.setItem("ms_model",v); }}
+                    style={{ width:"100%", padding:"7px 10px", borderRadius:7, border:"1px solid var(--line)", fontSize:13, outline:"none", background:"#fff" }}
+                  >
+                    <option value="claude-haiku-4-5-20251001">Haiku（速い・軽量）</option>
+                    <option value="claude-sonnet-4-6">Sonnet（バランス）</option>
+                    <option value="claude-opus-4-7">Opus（高精度・高性能）</option>
+                  </select>
+                </div>
                 {/* 接続テストボタン */}
                 <ApiTestButton />
                 <button onClick={()=>setShowKeyInput(false)} style={{ marginTop:8, width:"100%", padding:"6px", borderRadius:7, background:"var(--ink)", color:"#fff", fontSize:13, cursor:"pointer" }}>閉じる</button>

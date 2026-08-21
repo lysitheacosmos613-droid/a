@@ -405,7 +405,7 @@
             </div>
             <div class="setting">
               <div class="lb">検出解像度
-                <small>自動は顔の大きさに合わせて解像度を切り替えます。固定すると、その解像度で写らない大きさの顔は検出できません</small>
+                <small>MediaPipe が使えない環境や、遠くの顔を探す予備経路で使います。自動のままを推奨します</small>
               </div>
               <select id="setInputSize" class="btn sm">
                 <option value="auto">自動（推奨）</option>
@@ -429,9 +429,10 @@
           <div class="card">
             <h2>この仕組みについて</h2>
             <div class="note">
-              <b>処理はすべて端末内</b>：TensorFlow.js 上で顔検出（TinyFaceDetector）→ 68点ランドマークで位置合わせ →
-              顔認識モデルが 128 次元の特徴量を出力します。照合はこの特徴量同士のユークリッド距離で行い、
-              顔画像そのものをサーバーに送ることはありません。<br /><br />
+              <b>処理はすべて端末内</b>：MediaPipe Face Landmarker が顔と478点のランドマークを検出し、
+              両目と口の位置から顔を切り出したうえで、顔認識モデル（TensorFlow.js）が 128 次元の特徴量を出力します。
+              照合はこの特徴量同士のユークリッド距離で行い、顔画像そのものをサーバーに送ることはありません。
+              MediaPipe が使えない環境では、従来の TinyFaceDetector + 68点ランドマークの経路に自動で切り替わります。<br /><br />
               <b>限界</b>：照明・角度・マスク・経年で精度は下がります。双子や近親者は誤認することがあります。
               印刷写真や画面表示を使ったなりすましは、まばたき検知だけでは完全には防げません。
               入退室管理など重要な用途では、暗証番号やカードとの併用（多要素）を前提にしてください。<br /><br />
@@ -453,6 +454,16 @@
   </div>
 
   <script src="vendor/face-api/face-api.js"></script>
+  <script type="module">
+    // MediaPipe はESモジュールなので、読み込めたらグローバルに渡す。
+    // 失敗しても face-api だけの従来経路で動作する。
+    import("./vendor/mediapipe/vision_bundle.mjs")
+      .then(function (m) {
+        window.__MEDIAPIPE__ = { FilesetResolver: m.FilesetResolver, FaceLandmarker: m.FaceLandmarker };
+      })
+      .catch(function (e) { console.warn("MediaPipe を読み込めませんでした", e); })
+      .then(function () { window.dispatchEvent(new Event("mediapipe-settled")); });
+  </script>
   <script src="face-engine.js"></script>
   <script>
   (function () {
@@ -549,11 +560,11 @@
     var lastLoggedId = null;
     var lastLoggedAt = 0;
 
-    var blink = FE.createBlinkDetector({ windowMs: LIVENESS_WINDOW_MS, closedBelow: EAR_CLOSED, openAbove: EAR_OPEN });
+    var blink = FE.createLiveness({ windowMs: LIVENESS_WINDOW_MS, closedBelow: EAR_CLOSED, openAbove: EAR_OPEN });
 
     var enroll = { shots: [], busy: false, autoTimer: null };
 
-    var detector = FE.createDetector(function () { return config; });
+    var reader = FE.createReader({ getConfig: function () { return config; } });
 
     var video = $("cam");
     var overlay = $("overlay");
@@ -577,9 +588,12 @@
         }
       })
         .then(function (backend) {
+          return reader.init().then(function (mpOk) { return { backend: backend, mp: mpOk }; });
+        })
+        .then(function (info) {
           modelsReady = true;
           setStatus("準備完了", "is-ok");
-          $("backendText").textContent = "backend " + backend;
+          $("backendText").textContent = (info.mp ? "MediaPipe / " : "") + "backend " + info.backend;
           $("stageMsg").textContent = "「カメラを開始」を押してください";
           $("camToggle").disabled = false;
           refreshEnrollUI();
@@ -706,12 +720,17 @@
         octx.stroke();
       });
 
-      // ランドマーク
-      if (det.landmarks) {
+      // ランドマーク（MediaPipeの478点は間引いて描く）
+      var lm = det.landmarks;
+      if (lm && lm.positions && lm.positions.length) {
         octx.fillStyle = color;
-        det.landmarks.positions.forEach(function (pt) {
-          octx.fillRect(pt.x * view.scale + view.dx - 1, pt.y * view.scale + view.dy - 1, 2, 2);
-        });
+        var step = lm.positions.length > 100 ? 4 : 1;
+        for (var i = 0; i < lm.positions.length; i += step) {
+          var pt = lm.positions[i];
+          var px = lm.normalized ? pt.x * (video.videoWidth || 1) + lm.offset.x : pt.x;
+          var py = lm.normalized ? pt.y * (video.videoHeight || 1) + lm.offset.y : pt.y;
+          octx.fillRect(px * view.scale + view.dx - 1, py * view.scale + view.dy - 1, 2, 2);
+        }
       }
 
       if (label) {
@@ -750,7 +769,7 @@
       if (!running) return;
       if (!video.videoWidth) { requestAnimationFrame(loop); return; }
 
-      detector.detect(video)
+      reader.readVideo(video)
         .then(function (det) {
           var t = performance.now();
           if (lastFrameTs) {
@@ -768,15 +787,17 @@
             setBadges([{ text: "顔を検出中…" }]);
             handleNoFace();
           } else {
-            var ear = blink.update(det.landmarks);
+            blink.update(det);
             var badges = [
-              { text: "検出 " + Math.round(det.detection.score * 100) + "%" +
-                      (detector.activeSize ? " / " + detector.activeSize + "px" : "") },
+              { text: det.source === "face-api"
+                  ? "検出 " + Math.round(det.detection.score * 100) + "%" +
+                    (reader.activeSize ? " / " + reader.activeSize + "px" : "")
+                  : "検出 " + (det.source === "mediapipe-crop" ? "遠距離" : "正常") },
               blink.ok()
                 ? { text: "生体検知 OK", cls: "live-ok" }
                 : { text: "まばたきしてください", cls: "live-wait" }
             ];
-            badges.push({ text: "EAR " + fmt(ear, 2) });
+            if (blink.label()) badges.push({ text: blink.label() });
             setBadges(badges);
 
             if (mode === "auth") handleAuthFrame(det, view);
@@ -799,7 +820,7 @@
     }
 
     function handleAuthFrame(det, view) {
-      var desc = Array.from(det.descriptor);
+      var desc = det.descriptor;
       var best = identify(desc);
       var isMatch = best.person && best.dist <= config.threshold;
       var key = isMatch ? best.person.id : "__unknown__";
@@ -921,6 +942,7 @@
     function faceThumb(det, size) {
       return FE.cropFace(video, det.detection.box, size || 128);
     }
+    // 登録データの経路（1=従来 / 2=MediaPipe）
 
     function canShoot() {
       return running && mode === "enroll" && lastResult && !enroll.busy &&
@@ -932,7 +954,8 @@
       if (!canShoot()) return;
       var det = lastResult;
       enroll.shots.push({
-        descriptor: Array.from(det.descriptor),
+        v: det.source === "face-api" ? 1 : 2,
+        descriptor: det.descriptor,
         thumb: faceThumb(det, enroll.shots.length === 0 ? 160 : 64)
       });
       refreshEnrollUI();
@@ -1047,7 +1070,7 @@
     }
 
     function detectFromImage(img) {
-      return FE.detectFromImage(img);
+      return reader.readImage(img);
     }
 
     function imageThumb(img, box, size) {
@@ -1063,10 +1086,10 @@
           showResult("ng", "検出なし", "画像から顔を検出できませんでした", null, 0);
           return;
         }
-        var best = identify(Array.from(det.descriptor));
+        var best = identify(det.descriptor);
         var isMatch = best.person && best.dist <= config.threshold;
         $("idFileNote").textContent = "画像から照合しました（距離 " + (best.person ? fmt(best.dist) : "—") +
-          " ・ 検出 " + det.usedSize + "px" +
+          (det.usedSize ? " ・ 検出 " + det.usedSize + "px" : "") +
           (det.faceCount > 1 ? " ・ 顔が " + det.faceCount + " 人分あったため一番大きい顔で照合" : "") + "）";
         holdUntil = Date.now() + RESULT_HOLD_MS;
         if (isMatch) {
@@ -1095,7 +1118,7 @@
           if (!det) { alert("顔を検出できませんでした。"); return; }
           if (det.faceCount > 1 &&
               !confirm("画像に " + det.faceCount + " 人の顔があります。\n一番大きく写っている顔を登録します。よろしいですか？")) return;
-          var desc = Array.from(det.descriptor);
+          var desc = det.descriptor;
           people.push({
             id: uid(),
             name: name,

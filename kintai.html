@@ -443,7 +443,7 @@
                   <span class="val mono num" id="valDup"></span>
                 </div>
                 <div class="setting">
-                  <div class="lb">検出解像度<small>自動は顔の大きさに合わせて切り替えます</small></div>
+                  <div class="lb">検出解像度<small>MediaPipeが使えない環境や、遠くの顔を探すときの予備経路で使います</small></div>
                   <select id="setInputSize" class="btn sm">
                     <option value="auto">自動（推奨）</option>
                     <option value="224">224</option>
@@ -516,8 +516,11 @@
               <div class="card">
                 <h2>この仕組みについて</h2>
                 <div class="note">
-                  <b>打刻の本人確認</b>：カメラ映像から顔を検出し、128次元の特徴量に変換して登録済みの従業員と照合します。
+                  <b>打刻の本人確認</b>：MediaPipe Face Landmarker で顔と478点のランドマークを検出し、
+                  そこから切り出した顔を認識モデルが128次元の特徴量に変換して、登録済みの従業員と照合します。
                   処理はすべてこの端末内で行われ、顔画像が外部に送信されることはありません。<br /><br />
+                  <b>サンプル追加のすすめ</b>：この方式に切り替える前に登録した人は「旧方式で登録」と表示されます。
+                  そのままでも照合できますが、「今の顔をサンプル追加」で1枚足すと安定します。<br /><br />
                   <b>共用端末での注意</b>：iPadのFace IDは端末の持ち主1人しか登録できないため、
                   共用端末での本人確認には使えません。この画面が顔認証を使っているのはそのためです。<br /><br />
                   <b>限界</b>：写真をかざすなりすましは完全には防げません。打刻の不正が問題になる環境では、
@@ -557,6 +560,16 @@
   </div>
 
   <script src="vendor/face-api/face-api.js"></script>
+  <script type="module">
+    // MediaPipe はESモジュールなので、読み込めたらグローバルに渡す。
+    // 失敗しても face-api だけの従来経路で動作する。
+    import("./vendor/mediapipe/vision_bundle.mjs")
+      .then(function (m) {
+        window.__MEDIAPIPE__ = { FilesetResolver: m.FilesetResolver, FaceLandmarker: m.FaceLandmarker };
+      })
+      .catch(function (e) { console.warn("MediaPipe を読み込めませんでした", e); })
+      .then(function () { window.dispatchEvent(new Event("mediapipe-settled")); });
+  </script>
   <script src="face-engine.js"></script>
   <script>
   (function () {
@@ -653,7 +666,7 @@
     var video = $("cam");
     var overlay = $("overlay");
     var octx = overlay.getContext("2d");
-    var detector = FE.createDetector(function () { return config; });
+    var reader = FE.createReader({ getConfig: function () { return config; } });
 
     // ------------------------------------------------------------------
     // 時計
@@ -678,10 +691,12 @@
       FE.loadModels({
         onProgress: function (step) { if (step === "cdn") setStatus("モデルをCDNから取得中…", "is-load"); }
       }).then(function (backend) {
-        modelsReady = true;
-        setStatus("準備完了 / " + backend, "is-ok");
-        $("camToggle").disabled = false;
-        $("stageMsg").textContent = "「カメラを開始」を押してください";
+        return reader.init().then(function (mpOk) {
+          modelsReady = true;
+          setStatus("準備完了 / " + (mpOk ? "MediaPipe" : backend), "is-ok");
+          $("camToggle").disabled = false;
+          $("stageMsg").textContent = "「カメラを開始」を押してください";
+        });
       }).catch(function (e) {
         console.error(e);
         setStatus("モデルの読み込みに失敗", "is-err");
@@ -757,6 +772,17 @@
         octx.lineTo(p[0], p[1] + p[3] * c);
         octx.stroke();
       });
+      var lm = det.landmarks;
+      if (lm && lm.positions && lm.positions.length) {
+        octx.fillStyle = color;
+        var step = lm.positions.length > 100 ? 4 : 1; // MediaPipeの478点は間引いて描く
+        for (var i = 0; i < lm.positions.length; i += step) {
+          var pt = lm.positions[i];
+          var px = lm.normalized ? pt.x * (video.videoWidth || 1) + lm.offset.x : pt.x;
+          var py = lm.normalized ? pt.y * (video.videoHeight || 1) + lm.offset.y : pt.y;
+          octx.fillRect(px * view.scale + view.dx - 1, py * view.scale + view.dy - 1, 2, 2);
+        }
+      }
       if (label) {
         octx.save();
         if (config.mirror) { octx.translate(overlay.width, 0); octx.scale(-1, 1); x = overlay.width - x - w; }
@@ -784,7 +810,7 @@
       if (!running) return;
       if (!video.videoWidth) { requestAnimationFrame(loop); return; }
 
-      detector.detect(video).then(function (det) {
+      reader.readVideo(video).then(function (det) {
         var t = performance.now();
         if (lastFrameTs) {
           var fps = 1000 / (t - lastFrameTs);
@@ -802,8 +828,11 @@
           if (mode === "punch") handleNoFace();
           else syncShotButton();
         } else {
-          setBadges(["検出 " + Math.round(det.detection.score * 100) + "%" +
-                     (detector.activeSize ? " / " + detector.activeSize + "px" : "")]);
+          setBadges([det.source === "face-api"
+            ? "検出 " + Math.round(det.detection.score * 100) + "%" +
+              (reader.activeSize ? " / " + reader.activeSize + "px" : "")
+            : "検出 " + (det.source === "mediapipe-crop" ? "遠距離" : "正常") +
+              (det.blink != null ? " / まばたき " + det.blink.toFixed(2) : "")]);
           if (mode === "punch") handlePunchFrame(det, view);
           else handleEnrollFrame(det, view);
         }
@@ -833,7 +862,7 @@
     }
 
     function handlePunchFrame(det, view) {
-      var best = FE.identify(Array.from(det.descriptor), employees);
+      var best = FE.identify(det.descriptor, employees);
       var isMatch = best.person && best.dist <= config.threshold;
       var color = isMatch ? "#1f8a5b" : "#d83a3a";
 
@@ -1002,7 +1031,8 @@
       if (!canShoot()) return;
       var det = lastResult;
       enroll.shots.push({
-        descriptor: Array.from(det.descriptor),
+        v: det.source === "face-api" ? 1 : 2,
+        descriptor: det.descriptor,
         thumb: FE.cropFace(video, det.detection.box, enroll.shots.length === 0 ? 160 : 64)
       });
       refreshEnrollUI();
@@ -1044,7 +1074,8 @@
       employees.push({
         id: uid("emp"), name: name, descriptors: descriptors,
         descriptor: FE.meanDescriptor(descriptors), thumb: enroll.shots[0].thumb,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        v: enroll.shots[0].v || 2   // 特徴量を作った経路（1=旧, 2=MediaPipe）
       });
       writeJSON(KEY_EMP, employees);
       enroll.shots = [];
@@ -1059,7 +1090,7 @@
       var id = $("addSampleTarget").value;
       var emp = employees.filter(function (e) { return e.id === id; })[0];
       if (!emp || !lastResult) return;
-      emp.descriptors = (emp.descriptors || [emp.descriptor]).concat([Array.from(lastResult.descriptor)]);
+      emp.descriptors = (emp.descriptors || [emp.descriptor]).concat([lastResult.descriptor]);
       emp.descriptor = FE.meanDescriptor(emp.descriptors);
       writeJSON(KEY_EMP, employees);
       renderAll();
@@ -1071,10 +1102,10 @@
       if (!name || !$("empConsent").checked) { alert("氏名の入力と本人同意のチェックが必要です。"); return; }
       var img = new Image();
       img.onload = function () {
-        FE.detectFromImage(img).then(function (det) {
+        reader.readImage(img).then(function (det) {
           if (!det) { alert("顔を検出できませんでした。"); return; }
           if (det.faceCount > 1 && !confirm("画像に " + det.faceCount + " 人の顔があります。一番大きい顔を登録します。よろしいですか？")) return;
-          var desc = Array.from(det.descriptor);
+          var desc = det.descriptor;
           employees.push({
             id: uid("emp"), name: name, descriptors: [desc], descriptor: desc,
             thumb: FE.cropFace(img, det.detection.box, 160), createdAt: new Date().toISOString()
@@ -1245,8 +1276,9 @@
         box.style.flex = "1 1 auto";
         box.style.minWidth = "0";
         box.appendChild(el("div", "nm", e.name));
-        box.appendChild(el("div", "sm", (e.descriptors ? e.descriptors.length : 1) + " サンプル ・ " +
-          punchesOf(e.id).length + " 打刻"));
+        var sm = (e.descriptors ? e.descriptors.length : 1) + " サンプル ・ " + punchesOf(e.id).length + " 打刻";
+        if ((e.v || 1) < 2) sm += " ・ 旧方式で登録（サンプル追加を推奨）";
+        box.appendChild(el("div", "sm", sm));
         li.appendChild(box);
         var rn = el("button", "btn sm ghost", "改名");
         rn.onclick = function () {

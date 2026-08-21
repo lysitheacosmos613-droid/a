@@ -672,9 +672,16 @@
         self.lastSource = source;
         var box = hit.box;
         if (dx || dy) box = new faceapi.Rect(box.x + dx, box.y + dy, box.width, box.height);
+        // ランドマークは「検出に使った画像」に対する正規化座標なので、
+        // 描画側が元の座標へ戻せるように、その画像の大きさも一緒に返す
+        var lmSource = hit.cropSource || input;
         return {
           detection: { box: box, score: hit.score },
-          landmarks: { positions: hit.landmarks, normalized: true, offset: { x: dx, y: dy } },
+          landmarks: {
+            positions: hit.landmarks, normalized: true, offset: { x: dx, y: dy },
+            width: lmSource.videoWidth || lmSource.naturalWidth || lmSource.width,
+            height: lmSource.videoHeight || lmSource.naturalHeight || lmSource.height
+          },
           descriptor: desc,
           blink: hit.blink,
           alignedRect: rect,

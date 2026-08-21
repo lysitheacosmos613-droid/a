@@ -167,6 +167,13 @@
     .setting .lb small { display: block; color: var(--mute-2); font-size: 11px; margin-top: 2px; line-height: 1.5; }
     .setting input[type="range"] { width: 140px; accent-color: var(--blue); }
     .setting .val { min-width: 46px; text-align: right; font-size: 12px; color: var(--mute); }
+    .switch { position: relative; width: 38px; height: 22px; flex: 0 0 auto; }
+    .switch input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; z-index: 1; }
+    .switch i { position: absolute; inset: 0; background: var(--line); border-radius: 999px; transition: background 0.15s ease; }
+    .switch i::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px;
+      background: #fff; border-radius: 50%; transition: transform 0.15s ease; }
+    .switch input:checked + i { background: var(--blue); }
+    .switch input:checked + i::after { transform: translateX(16px); }
     .lock-screen { text-align: center; padding: 40px 20px; }
     .lock-screen .icon { font-size: 40px; }
     .lock-screen h3 { font-size: 17px; font-weight: 600; margin: 14px 0 8px; }
@@ -222,6 +229,7 @@
                 <button class="btn big primary" id="btnOut">退勤</button>
               </div>
               <div id="doneBox" hidden></div>
+              <div class="note" id="syncBadge" hidden></div>
               <div class="note" id="punchHint">登録済みの人だけが打刻できます。まだ誰も登録していない場合は「管理」タブから顔を登録してください。</div>
             </div>
           </div>
@@ -445,6 +453,38 @@
                 </div>
               </div>
               <div class="card">
+                <h2>Googleスプレッドシート連携<span class="hint">別の端末から集計を見る</span></h2>
+                <div class="note" id="syncState" style="margin-bottom:12px"></div>
+                <label class="field">
+                  <span>ウェブアプリのURL（Apps Scriptでデプロイして取得）</span>
+                  <input type="text" id="syncUrl" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off" />
+                </label>
+                <label class="field">
+                  <span>合言葉（Apps Script の TOKEN と同じもの）</span>
+                  <input type="text" id="syncToken" placeholder="kintai-himitsu-2026" autocomplete="off" />
+                </label>
+                <label class="field">
+                  <span>この端末の名前（記録に残ります）</span>
+                  <input type="text" id="syncDevice" placeholder="例：レジ横iPad" autocomplete="off" />
+                </label>
+                <div class="setting">
+                  <div class="lb">打刻したら自動で送信<small>電波が悪いときは端末に貯めて、次の機会に再送します</small></div>
+                  <label class="switch"><input type="checkbox" id="syncAuto" /><i></i></label>
+                </div>
+                <div class="row" style="margin-top:12px">
+                  <button class="btn sm" id="syncTestBtn">接続テスト</button>
+                  <button class="btn primary sm" id="syncNowBtn">今すぐ全件送信</button>
+                  <button class="btn sm ghost" id="syncOpenBtn">シートを開く</button>
+                </div>
+                <div class="note" id="syncResult" style="margin-top:10px"></div>
+                <div class="sep"></div>
+                <div class="note">
+                  手順は <span class="mono">kintai.md</span> と <span class="mono">gas/kintai-sheet.gs</span> にあります。
+                  打刻するとスプレッドシートの「打刻」シートに1行増え、「日別」シートが自動で作り直されます。
+                  集計はシートを共有すれば、店長のスマホやPCからそのまま見られます。
+                </div>
+              </div>
+              <div class="card">
                 <h2>データ</h2>
                 <div class="row">
                   <button class="btn sm" id="exportAllBtn">全データをJSONで書き出し</button>
@@ -536,7 +576,12 @@
       dupMinutes: 5,      // 同種の打刻をこの分数内は警告
       inputSize: "auto",
       scoreThreshold: 0.5,
-      mirror: true
+      mirror: true,
+      syncUrl: "",        // Apps Script のウェブアプリURL
+      syncToken: "",
+      syncDevice: "",
+      syncAuto: true,
+      lastSyncAt: ""
     };
 
     var SHOT_GUIDE = [
@@ -921,6 +966,7 @@
       $("punchHint").textContent = "打刻を記録しました。次の人はカメラに顔を向けてください。";
 
       renderAll();
+      if (config.syncAuto && config.syncUrl) flushSync(false, function (e) { if (e) console.warn("同期に失敗:", e.message); });
       setTimeout(function () { if (kiosk.state === "done") resetKiosk(); }, DONE_HOLD_MS + 200);
     }
 
@@ -1270,6 +1316,7 @@
           p.ts = nd.toISOString();
           p.source = "manual";
           p.editedAt = new Date().toISOString();
+          p.synced = false; // 修正した内容をシートへ送り直す
           writeJSON(KEY_PUNCH, punches);
           renderAll();
         };
@@ -1396,6 +1443,93 @@
           ]);
         });
       downloadCSV("kintai-" + month + "-打刻明細.csv", rows);
+    }
+
+    // ------------------------------------------------------------------
+    // Googleスプレッドシート連携
+    // ------------------------------------------------------------------
+    /*
+     * Apps Script のウェブアプリへ打刻を送る。
+     * Content-Type を text/plain にしているのは、プリフライト（OPTIONS）を避けるため。
+     * Apps Script は OPTIONS に応答できないため、JSON で送るとCORSで弾かれる。
+     */
+    function syncPost(payload) {
+      var url = (config.syncUrl || "").trim();
+      if (!url) return Promise.reject(new Error("URLが未設定です"));
+      return fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify(payload),
+        redirect: "follow"
+      }).then(function (res) {
+        return res.text().then(function (text) {
+          var data;
+          try { data = JSON.parse(text); }
+          catch (e) { throw new Error("応答を解釈できません（URLが正しいか、デプロイの公開範囲を確認してください）"); }
+          if (!data.ok) throw new Error(data.error || "送信に失敗しました");
+          return data;
+        });
+      });
+    }
+
+    function unsyncedPunches() {
+      return punches.filter(function (p) { return !p.synced; });
+    }
+
+    function punchPayload(list) {
+      return list.map(function (p) {
+        return { id: p.id, ts: p.ts, name: empName(p.empId), type: p.type, source: p.source, device: config.syncDevice || "" };
+      });
+    }
+
+    var syncing = false;
+    function flushSync(all, onDone) {
+      if (syncing) return;
+      var list = all ? punches.slice() : unsyncedPunches();
+      if (!list.length) { if (onDone) onDone(null, { added: 0, skipped: 0 }); renderSyncState(); return; }
+      if (!config.syncUrl) { if (onDone) onDone(new Error("URLが未設定です")); return; }
+      syncing = true;
+      renderSyncState("送信中…");
+      syncPost({ token: config.syncToken, device: config.syncDevice, punches: punchPayload(list) })
+        .then(function (data) {
+          var ids = {};
+          list.forEach(function (p) { ids[p.id] = true; });
+          punches.forEach(function (p) { if (ids[p.id]) p.synced = true; });
+          writeJSON(KEY_PUNCH, punches);
+          config.lastSyncAt = new Date().toISOString();
+          writeJSON(KEY_CONFIG, config);
+          syncing = false;
+          renderSyncState();
+          if (onDone) onDone(null, data);
+        })
+        .catch(function (e) {
+          syncing = false;
+          renderSyncState(); // 未送信の件数表示に戻す
+          if (onDone) onDone(e);
+        });
+    }
+
+    function renderSyncState(busy) {
+      var pending = unsyncedPunches().length;
+      var box = $("syncState");
+      if (box) {
+        if (!config.syncUrl) {
+          box.innerHTML = "スプレッドシート連携は<b>未設定</b>です。打刻はこの端末の中だけに保存されます。";
+        } else {
+          box.innerHTML = "連携<b>あり</b>：" +
+            (config.lastSyncAt ? "最終送信 " + new Date(config.lastSyncAt).toLocaleString("ja-JP") : "未送信") +
+            " ／ 未送信 " + pending + " 件";
+        }
+      }
+      var badge = $("syncBadge");
+      if (badge) {
+        if (!config.syncUrl) badge.hidden = true;
+        else {
+          badge.hidden = false;
+          badge.textContent = busy ? "スプレッドシートへ" + busy
+            : (pending ? "未送信の打刻が " + pending + " 件あります（次の打刻時に再送します）" : "スプレッドシートと同期済み");
+        }
+      }
     }
 
     // ------------------------------------------------------------------
@@ -1599,6 +1733,11 @@
       if (!$("setInputSize").value) { config.inputSize = "auto"; $("setInputSize").value = "auto"; }
       $("stageInner").classList.toggle("mirror", !!config.mirror);
       $("mirrorToggle").textContent = "左右反転 " + (config.mirror ? "ON" : "OFF");
+      $("syncUrl").value = config.syncUrl || "";
+      $("syncToken").value = config.syncToken || "";
+      $("syncDevice").value = config.syncDevice || "";
+      $("syncAuto").checked = !!config.syncAuto;
+      renderSyncState();
     }
     function saveConfig() { writeJSON(KEY_CONFIG, config); renderSettings(); }
 
@@ -1703,6 +1842,43 @@
       renderAll();
     };
 
+    function saveSyncField(key, value) {
+      config[key] = value.trim();
+      writeJSON(KEY_CONFIG, config);
+      renderSyncState();
+    }
+    $("syncUrl").onchange = function (e) { saveSyncField("syncUrl", e.target.value); };
+    $("syncToken").onchange = function (e) { saveSyncField("syncToken", e.target.value); };
+    $("syncDevice").onchange = function (e) { saveSyncField("syncDevice", e.target.value); };
+    $("syncAuto").onchange = function (e) { config.syncAuto = e.target.checked; writeJSON(KEY_CONFIG, config); };
+    $("syncTestBtn").onclick = function () {
+      saveSyncField("syncUrl", $("syncUrl").value);
+      saveSyncField("syncToken", $("syncToken").value);
+      $("syncResult").textContent = "接続を確認しています…";
+      syncPost({ token: config.syncToken, ping: true })
+        .then(function (data) {
+          $("syncResult").innerHTML = "接続できました。シート「<b>" + (data.sheet || "?") +
+            "</b>」に現在 " + (data.total || 0) + " 件の打刻があります。";
+        })
+        .catch(function (e) { $("syncResult").textContent = "接続できませんでした：" + e.message; });
+    };
+    $("syncNowBtn").onclick = function () {
+      saveSyncField("syncUrl", $("syncUrl").value);
+      saveSyncField("syncToken", $("syncToken").value);
+      $("syncResult").textContent = "送信しています…";
+      flushSync(true, function (e, data) {
+        if (e) { $("syncResult").textContent = "送信できませんでした：" + e.message; return; }
+        $("syncResult").textContent = "送信しました（新規 " + data.added + " 件 / 更新 " +
+          (data.updated || 0) + " 件 / 変更なし " + (data.skipped || 0) + " 件 / シート合計 " +
+          (data.total || 0) + " 件）";
+      });
+    };
+    $("syncOpenBtn").onclick = function () {
+      if (!config.syncUrl) { $("syncResult").textContent = "先にURLを設定してください。"; return; }
+      window.open(config.syncUrl + (config.syncUrl.indexOf("?") < 0 ? "?" : "&") +
+        "token=" + encodeURIComponent(config.syncToken), "_blank");
+    };
+
     $("regPasskeyBtn").onclick = registerPasskey;
     $("delPasskeyBtn").onclick = function () {
       if (!confirm("パスキーを解除します。管理画面は誰でも開ける状態に戻ります。よろしいですか？")) return;
@@ -1732,6 +1908,9 @@
     applyLock();
     selectTab("punch");
     boot();
+    if (config.syncAuto && config.syncUrl && unsyncedPunches().length) {
+      setTimeout(function () { flushSync(false, function (e) { if (e) console.warn("同期に失敗:", e.message); }); }, 3000);
+    }
   })();
   </script>
 </body>

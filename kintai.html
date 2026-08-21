@@ -432,8 +432,8 @@
                     <small id="modelNote">顔を数値に変換するモデル。切り替えると登録し直しが必要です</small>
                   </div>
                   <select id="setModel" class="btn sm" style="max-width:190px">
-                    <option value="dlib">標準（128次元・同梱）</option>
-                    <option value="jf">JAPANESE FACE V1（512次元）</option>
+                    <option value="jf">JAPANESE FACE V1（512次元・既定）</option>
+                    <option value="dlib">互換用（128次元・同梱）</option>
                   </select>
                 </div>
                 <div class="setting">
@@ -577,7 +577,10 @@
         window.__MEDIAPIPE__ = { FilesetResolver: m.FilesetResolver, FaceLandmarker: m.FaceLandmarker };
       })
       .catch(function (e) { console.warn("MediaPipe を読み込めませんでした", e); })
-      .then(function () { window.dispatchEvent(new Event("mediapipe-settled")); });
+      .then(function () {
+        window.__MEDIAPIPE_SETTLED__ = true;
+        window.dispatchEvent(new Event("mediapipe-settled"));
+      });
   </script>
   <script src="face-engine.js"></script>
   <script>
@@ -594,7 +597,7 @@
 
     var DEFAULTS = {
       threshold: 0.45,      // 標準モデル（距離。小さいほど似ている）
-      model: "dlib",        // dlib | jf
+      model: "jf",          // jf | dlib（既定は JAPANESE FACE V1）
       thresholdJf: 0.4,     // JAPANESE FACE V1（コサイン類似度。大きいほど似ている）
       streak: 3,
       dupMinutes: 5,      // 同種の打刻をこの分数内は警告
@@ -705,9 +708,12 @@
     function boot() {
       setStatus("モデル読み込み中…", "is-load");
       FE.loadModels({
+        // 128次元モデルは互換用に切り替えたときだけ読み込む
+        recognition: config.model !== "jf",
         onProgress: function (step) { if (step === "cdn") setStatus("モデルをCDNから取得中…", "is-load"); }
       }).then(function (backend) {
         return reader.init().then(function (mpOk) {
+          if (config.model === "jf") setStatus("認識モデルを取得中…", "is-load");
           return reader.setRecognizer(config.model).then(function (actual) {
             config.model = actual;
             renderSettings();
@@ -1794,7 +1800,7 @@
         ? "一致しきい値<small>コサイン類似度。<b>大きいほど厳格</b>で、0.4 が推奨値です</small>"
         : "一致しきい値<small>距離。<b>小さいほど厳格</b>で、0.4〜0.5 が目安です</small>";
       $("modelNote").innerHTML = jf
-        ? "JAPANESE FACE V1（日本人の顔に最適化・512次元）。初回に約40MBを取得します。<b>商用の実稼働には作者のライセンスが必要です</b>"
+        ? "JAPANESE FACE V1（日本人の顔に最適化・512次元）。<b>社内実験・試験運用はApache-2.0の条件で使えますが、商用サービスとしての実稼働には作者との契約が必要です</b>"
         : "同梱の128次元モデル。切り替えると特徴量の形式が変わるため、登録し直しが必要です";
       $("setStreak").value = config.streak;
       $("valStreak").textContent = config.streak + " 回";

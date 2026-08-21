@@ -19,12 +19,35 @@
   var DEFAULT_LOCAL_URI = "vendor/face-api/model";
   var DEFAULT_CDN_URI = "https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.15/model";
 
-  function loadFrom(uri) {
-    return Promise.all([
+  /*
+   * 顔認識モデル（6.4MB）は dlib 経路を使うときだけ必要なので、
+   * 起動時は検出とランドマークだけを読み、認識モデルは後から必要に応じて読む。
+   */
+  var modelUris = { local: DEFAULT_LOCAL_URI, cdn: DEFAULT_CDN_URI };
+  var recognitionNetPromise = null;
+
+  function loadFrom(uri, withRecognition) {
+    var nets = [
       faceapi.nets.tinyFaceDetector.loadFromUri(uri),
-      faceapi.nets.faceLandmark68Net.loadFromUri(uri),
-      faceapi.nets.faceRecognitionNet.loadFromUri(uri)
-    ]);
+      faceapi.nets.faceLandmark68Net.loadFromUri(uri)
+    ];
+    if (withRecognition) nets.push(faceapi.nets.faceRecognitionNet.loadFromUri(uri));
+    return Promise.all(nets);
+  }
+
+  // dlib の128次元モデルを読み込む（すでに読み込み済みなら何もしない）
+  function ensureRecognitionNet() {
+    if (faceapi.nets.faceRecognitionNet.isLoaded) return Promise.resolve(true);
+    if (recognitionNetPromise) return recognitionNetPromise;
+    recognitionNetPromise = faceapi.nets.faceRecognitionNet.loadFromUri(modelUris.local)
+      .catch(function () { return faceapi.nets.faceRecognitionNet.loadFromUri(modelUris.cdn); })
+      .then(function () { return true; })
+      .catch(function (e) {
+        recognitionNetPromise = null;
+        console.warn("顔認識モデルを読み込めませんでした", e);
+        return false;
+      });
+    return recognitionNetPromise;
   }
 
   // ローカル同梱のモデルを優先し、失敗したら CDN にフォールバックする。
@@ -34,12 +57,14 @@
     var local = opts.localUri || DEFAULT_LOCAL_URI;
     var cdn = opts.cdnUri || DEFAULT_CDN_URI;
     var onProgress = opts.onProgress || function () {};
+    var withRecognition = opts.recognition !== false;
+    modelUris = { local: local, cdn: cdn };
     onProgress("local");
-    return loadFrom(local)
+    return loadFrom(local, withRecognition)
       .catch(function (e) {
         console.warn("ローカルのモデル読み込みに失敗、CDNを試します", e);
         onProgress("cdn");
-        return loadFrom(cdn);
+        return loadFrom(cdn, withRecognition);
       })
       .then(function () {
         var backend = "—";
@@ -333,10 +358,27 @@
    * MediaPipe を初期化する。読み込めない環境では null を返し、
    * 呼び出し側は face-api のみの従来経路にそのまま戻れる。
    */
+  /*
+   * MediaPipe はESモジュールとして非同期に読み込まれるため、
+   * 読み込みが確定するまで待つ（読み込めなかった場合も確定として扱う）。
+   */
+  function whenMediaPipeSettled() {
+    if (global.__MEDIAPIPE__ || global.__MEDIAPIPE_SETTLED__) return Promise.resolve();
+    return new Promise(function (resolve) {
+      var done = function () { resolve(); };
+      global.addEventListener("mediapipe-settled", done, { once: true });
+      setTimeout(done, 8000); // 保険：読み込みイベントが来なくても進む
+    });
+  }
+
   function createMediaPipe(opts) {
     opts = opts || {};
     var base = opts.baseUri || "vendor/mediapipe";
     var mode = opts.runningMode || "VIDEO";
+    return whenMediaPipeSettled().then(function () { return createMediaPipeNow(opts, base, mode); });
+  }
+
+  function createMediaPipeNow(opts, base, mode) {
     var mp = global.__MEDIAPIPE__;
     if (!mp) return Promise.resolve(null);
     return mp.FilesetResolver.forVisionTasks(base + "/wasm")
@@ -506,17 +548,24 @@
        * MediaPipe が使えない環境では dlib のまま据え置く。
        */
       setRecognizer: function (name) {
-        if (name !== "jf") { recognizer = "dlib"; return Promise.resolve("dlib"); }
-        if (!mp) { recognizer = "dlib"; return Promise.resolve("dlib"); }
+        if (name !== "jf") {
+          return ensureRecognitionNet().then(function () { recognizer = "dlib"; return "dlib"; });
+        }
+        if (!mp) {
+          return ensureRecognitionNet().then(function () { recognizer = "dlib"; return "dlib"; });
+        }
         if (!jf) jf = createJapaneseFace(opts.japaneseFace || {});
         return jf.init().then(function (ok) {
-          recognizer = ok ? "jf" : "dlib";
-          return recognizer;
+          if (ok) { recognizer = "jf"; return "jf"; }
+          return ensureRecognitionNet().then(function () { recognizer = "dlib"; return "dlib"; });
         });
       },
 
       readVideo: function (video) {
         if (!mp) {
+          if (!faceapi.nets.faceRecognitionNet.isLoaded) {
+            return ensureRecognitionNet().then(function () { return null; });
+          }
           return legacy.detect(video).then(function (det) {
             self.lastSource = det ? "face-api" : null;
             return det ? toResult(det, null, "face-api") : null;
@@ -1029,6 +1078,7 @@
   }
 
   global.FaceEngine = {
+    ensureRecognitionNet: ensureRecognitionNet,
     createYuNet: createYuNet,
     matchPeople: matchPeople,
     createJapaneseFace: createJapaneseFace,

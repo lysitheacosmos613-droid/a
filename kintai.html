@@ -802,12 +802,12 @@
       var lm = det.landmarks;
       if (lm && lm.positions && lm.positions.length) {
         octx.fillStyle = color;
-        var step = lm.positions.length > 100 ? 4 : 1; // MediaPipeの478点は間引いて描く
-        for (var i = 0; i < lm.positions.length; i += step) {
+        var dot = lm.positions.length > 100 ? 1 : 2; // 478点は小さく、68点は大きめに
+        for (var i = 0; i < lm.positions.length; i++) {
           var pt = lm.positions[i];
           var px = lm.normalized ? pt.x * (lm.width || video.videoWidth || 1) + lm.offset.x : pt.x;
           var py = lm.normalized ? pt.y * (lm.height || video.videoHeight || 1) + lm.offset.y : pt.y;
-          octx.fillRect(px * view.scale + view.dx - 1, py * view.scale + view.dy - 1, 2, 2);
+          octx.fillRect(px * view.scale + view.dx - dot / 2, py * view.scale + view.dy - dot / 2, dot, dot);
         }
       }
       if (label) {

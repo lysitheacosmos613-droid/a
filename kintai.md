@@ -147,13 +147,30 @@ CSVは Excel で文字化けしないよう UTF-8 BOM 付きで書き出しま�
   退職時の削除（従業員一覧の「削除」）を運用に組み込んでください
 - **認識されにくいとき**：眼鏡の有無や照明で距離が伸びることがあります。管理 → 従業員 →「今の顔をサンプル追加」で、
   その状態のまま追加登録すると安定します。それでも通らない場合は設定でしきい値を上げてください（既定 0.45）
+- **認識モデル**：既定は **JAPANESE FACE V1**（日本人の顔に最適化・512次元・コサイン類似度）です。
+  管理 → 設定で互換用の128次元モデルにも切り替えられますが、特徴量の形式が変わるため
+  **切り替えると全員登録し直しが必要**です。一覧には「別の認識モデル」と表示され、照合対象から外れます。
+  なお JAPANESE FACE V1 は、研究・社内実験・試験運用は Apache-2.0 の条件で使えますが、
+  **商用サービスとして実稼働させる場合は作者とのライセンス契約が必要**です。
+  詳細は `vendor/japanese-face/LICENSE.md` と `face-auth.md` を参照してください
+- **「旧方式で登録」と出ている人**：顔の切り出し方法を変更する前に登録された人です。そのままでも照合できますが、
+  「今の顔をサンプル追加」で1枚足すと安定します
 
 ## 構成
 
 ```
-kintai.html        勤怠システム本体
+kintai.html          勤怠システム本体
 gas/kintai-sheet.gs  Googleスプレッドシート連携用のApps Scriptコード
-face-auth.html     顔認証の単体デモ（しきい値の挙動を確かめる用）
-face-engine.js     顔検出・照合の共通処理（両方から読み込む）
-vendor/face-api/   @vladmandic/face-api 1.7.15（MIT）とモデル重み
+face-auth.html       顔認証の単体デモ（しきい値の挙動を確かめる用）
+face-engine.js       顔検出・照合の共通処理（両方から読み込む）
+vendor/mediapipe/    @mediapipe/tasks-vision 1.0.1（Apache-2.0）と顔ランドマークモデル
+vendor/face-api/     @vladmandic/face-api 1.7.15（MIT）と顔認識モデル
+vendor/yunet/        YuNet 顔検出モデル（MIT・227KB）
+vendor/onnxruntime/  ONNX Runtime Web 1.27.0（MIT）
+vendor/japanese-face/ JAPANESE_FACE_V1.onnx（yKesamaru氏 / 東海顔認証）とライセンス
 ```
+
+顔の検出は YuNet、ランドマークは MediaPipe、特徴量の抽出は JAPANESE FACE V1（既定）という構成です。
+互換用の128次元モデルは、そちらに切り替えたときだけ読み込みます。
+詳しい経緯と実測値は `face-auth.md` の「仕組み」を参照してください。
+初回の読み込みは合計20MBほどになります（2回目以降はキャッシュされます）。

@@ -384,7 +384,16 @@
           <div class="card">
             <h2>認証の設定</h2>
             <div class="setting">
-              <div class="lb">一致しきい値
+              <div class="lb">認識モデル
+                <small id="modelNote">顔を数値に変換するモデル</small>
+              </div>
+              <select id="setModel" class="btn sm" style="max-width:190px">
+                <option value="jf">JAPANESE FACE V1（512次元・既定）</option>
+                <option value="dlib">互換用（128次元・同梱）</option>
+              </select>
+            </div>
+            <div class="setting">
+              <div class="lb" id="thresholdLabel">一致しきい値
                 <small>小さいほど厳格。0.4〜0.5 が目安（顔の距離が小さいほど似ている）</small>
               </div>
               <input type="range" id="setThreshold" min="0.30" max="0.70" step="0.01" />
@@ -405,7 +414,7 @@
             </div>
             <div class="setting">
               <div class="lb">検出解像度
-                <small>自動は顔の大きさに合わせて解像度を切り替えます。固定すると、その解像度で写らない大きさの顔は検出できません</small>
+                <small>YuNet も MediaPipe も使えない環境の予備経路で使います。自動のままを推奨します</small>
               </div>
               <select id="setInputSize" class="btn sm">
                 <option value="auto">自動（推奨）</option>
@@ -417,7 +426,7 @@
             </div>
             <div class="setting">
               <div class="lb">検出スコアの下限
-                <small>低いと顔でないものを拾いやすくなります</small>
+                <small>YuNet（顔検出）の下限。低いほど遠くの顔まで拾いますが、顔でないものも拾いやすくなります</small>
               </div>
               <input type="range" id="setScore" min="0.20" max="0.80" step="0.05" />
               <span class="val mono num" id="valScore"></span>
@@ -429,9 +438,13 @@
           <div class="card">
             <h2>この仕組みについて</h2>
             <div class="note">
-              <b>処理はすべて端末内</b>：TensorFlow.js 上で顔検出（TinyFaceDetector）→ 68点ランドマークで位置合わせ →
-              顔認識モデルが 128 次元の特徴量を出力します。照合はこの特徴量同士のユークリッド距離で行い、
-              顔画像そのものをサーバーに送ることはありません。<br /><br />
+              <b>処理はすべて端末内</b>：YuNet が顔の位置を検出し、その周辺を切り出して
+              MediaPipe Face Landmarker が478点のランドマークを求め、
+              両目と口の位置から顔を切り出したうえで、顔認識モデル（TensorFlow.js）が 128 次元の特徴量を出力します。
+              照合はこの特徴量同士のユークリッド距離で行い、顔画像そのものをサーバーに送ることはありません。
+              YuNet は stride 8/16/32 の3階層を同時に見るマルチスケール検出器なので、
+              顔の大きさによる検出漏れが起きません。これらが使えない環境では、
+              従来の TinyFaceDetector + 68点ランドマークの経路に自動で切り替わります。<br /><br />
               <b>限界</b>：照明・角度・マスク・経年で精度は下がります。双子や近親者は誤認することがあります。
               印刷写真や画面表示を使ったなりすましは、まばたき検知だけでは完全には防げません。
               入退室管理など重要な用途では、暗証番号やカードとの併用（多要素）を前提にしてください。<br /><br />
@@ -453,6 +466,19 @@
   </div>
 
   <script src="vendor/face-api/face-api.js"></script>
+  <script type="module">
+    // MediaPipe はESモジュールなので、読み込めたらグローバルに渡す。
+    // 失敗しても face-api だけの従来経路で動作する。
+    import("./vendor/mediapipe/vision_bundle.mjs")
+      .then(function (m) {
+        window.__MEDIAPIPE__ = { FilesetResolver: m.FilesetResolver, FaceLandmarker: m.FaceLandmarker };
+      })
+      .catch(function (e) { console.warn("MediaPipe を読み込めませんでした", e); })
+      .then(function () {
+        window.__MEDIAPIPE_SETTLED__ = true;
+        window.dispatchEvent(new Event("mediapipe-settled"));
+      });
+  </script>
   <script src="face-engine.js"></script>
   <script>
   (function () {
@@ -470,6 +496,8 @@
 
     var DEFAULTS = {
       threshold: 0.45,     // 128次元特徴量のユークリッド距離
+      model: "jf",         // jf | dlib（既定は JAPANESE FACE V1）
+      thresholdJf: 0.4,    // JAPANESE FACE V1 のコサイン類似度
       streak: 3,           // 連続一致回数
       liveness: false,     // まばたき必須
       inputSize: "auto",  // "auto" か 224/320/416/512
@@ -549,11 +577,11 @@
     var lastLoggedId = null;
     var lastLoggedAt = 0;
 
-    var blink = FE.createBlinkDetector({ windowMs: LIVENESS_WINDOW_MS, closedBelow: EAR_CLOSED, openAbove: EAR_OPEN });
+    var blink = FE.createLiveness({ windowMs: LIVENESS_WINDOW_MS, closedBelow: EAR_CLOSED, openAbove: EAR_OPEN });
 
     var enroll = { shots: [], busy: false, autoTimer: null };
 
-    var detector = FE.createDetector(function () { return config; });
+    var reader = FE.createReader({ getConfig: function () { return config; } });
 
     var video = $("cam");
     var overlay = $("overlay");
@@ -572,14 +600,27 @@
       FE.loadModels({
         localUri: LOCAL_MODEL_URI,
         cdnUri: CDN_MODEL_URI,
+        // 128次元モデルは互換用に切り替えたときだけ読み込む
+        recognition: config.model !== "jf",
         onProgress: function (step) {
           if (step === "cdn") setStatus("モデルをCDNから取得中…", "is-load");
         }
       })
         .then(function (backend) {
+          return reader.init().then(function (mpOk) { return { backend: backend, mp: mpOk }; });
+        })
+        .then(function (info) {
+          return reader.setRecognizer(config.model).then(function (actual) {
+            config.model = actual;
+            renderSettings();
+            return info;
+          });
+        })
+        .then(function (info) {
           modelsReady = true;
           setStatus("準備完了", "is-ok");
-          $("backendText").textContent = "backend " + backend;
+          $("backendText").textContent = (config.model === "jf" ? "JAPANESE FACE V1 / " : "") +
+            (info.mp ? "MediaPipe / " : "") + "backend " + info.backend;
           $("stageMsg").textContent = "「カメラを開始」を押してください";
           $("camToggle").disabled = false;
           refreshEnrollUI();
@@ -674,8 +715,12 @@
     // ------------------------------------------------------------------
     // 特徴量の照合
     // ------------------------------------------------------------------
-    function identify(descriptor) {
-      return FE.identify(descriptor, people);
+    function activeThreshold() { return config.model === "jf" ? config.thresholdJf : config.threshold; }
+    function scoreText(m, d) {
+      return m.kind === "cos" ? "類似度 " + m.score.toFixed(d || 3) : "距離 " + m.score.toFixed(d || 3);
+    }
+    function identify(descriptor, model) {
+      return FE.matchPeople(descriptor, people, model || config.model, activeThreshold());
     }
 
     // ------------------------------------------------------------------
@@ -706,12 +751,17 @@
         octx.stroke();
       });
 
-      // ランドマーク
-      if (det.landmarks) {
+      // ランドマーク（MediaPipeの478点は間引いて描く）
+      var lm = det.landmarks;
+      if (lm && lm.positions && lm.positions.length) {
         octx.fillStyle = color;
-        det.landmarks.positions.forEach(function (pt) {
-          octx.fillRect(pt.x * view.scale + view.dx - 1, pt.y * view.scale + view.dy - 1, 2, 2);
-        });
+        var step = lm.positions.length > 100 ? 4 : 1;
+        for (var i = 0; i < lm.positions.length; i += step) {
+          var pt = lm.positions[i];
+          var px = lm.normalized ? pt.x * (video.videoWidth || 1) + lm.offset.x : pt.x;
+          var py = lm.normalized ? pt.y * (video.videoHeight || 1) + lm.offset.y : pt.y;
+          octx.fillRect(px * view.scale + view.dx - 1, py * view.scale + view.dy - 1, 2, 2);
+        }
       }
 
       if (label) {
@@ -750,7 +800,7 @@
       if (!running) return;
       if (!video.videoWidth) { requestAnimationFrame(loop); return; }
 
-      detector.detect(video)
+      reader.readVideo(video)
         .then(function (det) {
           var t = performance.now();
           if (lastFrameTs) {
@@ -768,15 +818,17 @@
             setBadges([{ text: "顔を検出中…" }]);
             handleNoFace();
           } else {
-            var ear = blink.update(det.landmarks);
+            blink.update(det);
             var badges = [
-              { text: "検出 " + Math.round(det.detection.score * 100) + "%" +
-                      (detector.activeSize ? " / " + detector.activeSize + "px" : "") },
+              { text: det.source === "face-api"
+                  ? "検出 " + Math.round(det.detection.score * 100) + "%" +
+                    (reader.activeSize ? " / " + reader.activeSize + "px" : "")
+                  : "検出 " + (det.source === "yunet" ? "YuNet" : det.source === "mediapipe-crop" ? "遠距離" : "正常") },
               blink.ok()
                 ? { text: "生体検知 OK", cls: "live-ok" }
                 : { text: "まばたきしてください", cls: "live-wait" }
             ];
-            badges.push({ text: "EAR " + fmt(ear, 2) });
+            if (blink.label()) badges.push({ text: blink.label() });
             setBadges(badges);
 
             if (mode === "auth") handleAuthFrame(det, view);
@@ -799,9 +851,9 @@
     }
 
     function handleAuthFrame(det, view) {
-      var desc = Array.from(det.descriptor);
-      var best = identify(desc);
-      var isMatch = best.person && best.dist <= config.threshold;
+      var desc = det.descriptor;
+      var best = identify(desc, det.model);
+      var isMatch = best.isMatch;
       var key = isMatch ? best.person.id : "__unknown__";
 
       if (matchStreak.id === key) matchStreak.count++;
@@ -815,7 +867,7 @@
       if (!confirmed) color = "#0047ff";
       var label = people.length === 0
         ? "未登録（登録者なし）"
-        : (isMatch ? best.person.name + "  " + fmt(best.dist, 2) : "未登録の顔  " + fmt(best.dist, 2));
+        : (best.person ? (isMatch ? best.person.name : "未登録の顔") + "  " + fmt(best.score, 2) : "未登録の顔");
       drawFace(det, view, color, label);
 
       if (Date.now() < holdUntil) return; // 直前の確定結果を表示中
@@ -828,25 +880,25 @@
 
       if (isMatch && needLive && !liveOK) {
         showResult("pending", best.person.name + " ?", "生体検知の待機中：一度まばたきしてください",
-          best.person, 1 - clamp(best.dist / config.threshold, 0, 1));
+          best.person, best.ratio);
         return;
       }
 
       if (isMatch) {
-        var sim = 1 - clamp(best.dist / 0.8, 0, 1);
         showResult("ok", best.person.name,
-          "認証成功 ・ 距離 " + fmt(best.dist) + " ・ 類似度 " + Math.round(sim * 100) + "%" +
+          "認証成功 ・ " + scoreText(best) +
           (best.person.note ? " ・ " + best.person.note : ""),
-          best.person, sim);
-        pushLog(best.person.name, best.dist, true);
+          best.person, best.ratio);
+        pushLog(best.person.name, best.score, true);
         holdUntil = Date.now() + RESULT_HOLD_MS;
         matchStreak = { id: null, count: 0 };
       } else {
         var msg = people.length === 0
           ? "登録者がいません。「顔を登録」タブから登録してください"
-          : "登録されていない顔です ・ 最近傍の距離 " + (best.person ? fmt(best.dist) : "—");
+          : (best.person ? "登録されていない顔です ・ 最近傍の" + scoreText(best)
+             : "この認識モデルで登録された顔がありません（" + best.skipped + " 件は別モデル）");
         showResult("ng", "未登録", msg, null, 0);
-        pushLog(null, best.person ? best.dist : null, false);
+        pushLog(null, best.person ? best.score : null, false);
         holdUntil = Date.now() + RESULT_HOLD_MS;
         matchStreak = { id: null, count: 0 };
       }
@@ -921,6 +973,7 @@
     function faceThumb(det, size) {
       return FE.cropFace(video, det.detection.box, size || 128);
     }
+    // 登録データの経路（1=従来 / 2=MediaPipe）
 
     function canShoot() {
       return running && mode === "enroll" && lastResult && !enroll.busy &&
@@ -932,7 +985,9 @@
       if (!canShoot()) return;
       var det = lastResult;
       enroll.shots.push({
-        descriptor: Array.from(det.descriptor),
+        v: det.source === "face-api" ? 1 : 2,
+        model: det.model || "dlib",
+        descriptor: det.descriptor,
         thumb: faceThumb(det, enroll.shots.length === 0 ? 160 : 64)
       });
       refreshEnrollUI();
@@ -1008,9 +1063,9 @@
       var descriptors = enroll.shots.map(function (s) { return s.descriptor; });
 
       // 登録済みの人とあまりに近い場合は確認する（二重登録の防止）
-      var best = identify(meanDescriptor(descriptors));
-      if (best.person && best.dist <= config.threshold) {
-        if (!confirm("「" + best.person.name + "」と非常に似ています（距離 " + fmt(best.dist, 2) + "）。\n" +
+      var best = identify(meanDescriptor(descriptors), enroll.shots[0].model || "dlib");
+      if (best.isMatch) {
+        if (!confirm("「" + best.person.name + "」と非常に似ています（" + scoreText(best, 2) + "）。\n" +
                      "同じ人の可能性があります。それでも新規登録しますか？")) return;
       }
 
@@ -1021,7 +1076,8 @@
         descriptors: descriptors,
         descriptor: meanDescriptor(descriptors),
         thumb: enroll.shots[0].thumb,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        model: enroll.shots[0].model || "dlib"
       });
       writeJSON(KEY_PEOPLE, people);
 
@@ -1047,7 +1103,7 @@
     }
 
     function detectFromImage(img) {
-      return FE.detectFromImage(img);
+      return reader.readImage(img);
     }
 
     function imageThumb(img, box, size) {
@@ -1063,19 +1119,19 @@
           showResult("ng", "検出なし", "画像から顔を検出できませんでした", null, 0);
           return;
         }
-        var best = identify(Array.from(det.descriptor));
-        var isMatch = best.person && best.dist <= config.threshold;
-        $("idFileNote").textContent = "画像から照合しました（距離 " + (best.person ? fmt(best.dist) : "—") +
-          " ・ 検出 " + det.usedSize + "px" +
+        var best = identify(det.descriptor, det.model);
+        var isMatch = best.isMatch;
+        $("idFileNote").textContent = "画像から照合しました（" + (best.person ? scoreText(best) : "対象なし") +
+          (det.usedSize ? " ・ 検出 " + det.usedSize + "px" : "") +
           (det.faceCount > 1 ? " ・ 顔が " + det.faceCount + " 人分あったため一番大きい顔で照合" : "") + "）";
         holdUntil = Date.now() + RESULT_HOLD_MS;
         if (isMatch) {
-          var sim = 1 - clamp(best.dist / 0.8, 0, 1);
-          showResult("ok", best.person.name, "画像で認証成功 ・ 距離 " + fmt(best.dist), best.person, sim);
-          pushLog(best.person.name, best.dist, true, true);
+          showResult("ok", best.person.name, "画像で認証成功 ・ " + scoreText(best), best.person, best.ratio);
+          pushLog(best.person.name, best.score, true, true);
         } else {
-          showResult("ng", "未登録", "登録されていない顔です ・ 最近傍 " + (best.person ? fmt(best.dist) : "—"), null, 0);
-          pushLog(null, best.person ? best.dist : null, false, true);
+          showResult("ng", "未登録", "登録されていない顔です ・ " +
+            (best.person ? "最近傍の" + scoreText(best) : "この認識モデルの登録者がいません"), null, 0);
+          pushLog(null, best.person ? best.score : null, false, true);
         }
       }).catch(function (e) {
         console.error(e);
@@ -1095,7 +1151,7 @@
           if (!det) { alert("顔を検出できませんでした。"); return; }
           if (det.faceCount > 1 &&
               !confirm("画像に " + det.faceCount + " 人の顔があります。\n一番大きく写っている顔を登録します。よろしいですか？")) return;
-          var desc = Array.from(det.descriptor);
+          var desc = det.descriptor;
           people.push({
             id: uid(),
             name: name,
@@ -1103,7 +1159,8 @@
             descriptors: [desc],
             descriptor: desc,
             thumb: imageThumb(img, det.detection.box, 160),
-            createdAt: new Date().toISOString()
+            createdAt: new Date().toISOString(),
+            model: det.model || "dlib"
           });
           writeJSON(KEY_PEOPLE, people);
           $("enrollName").value = "";
@@ -1139,6 +1196,7 @@
         box.style.minWidth = "0";
         box.appendChild(el("div", "nm", p.name));
         var n = (p.descriptors ? p.descriptors.length : 1) + " サンプル";
+        if ((p.model || "dlib") !== config.model) n += " ・ 別の認識モデル（照合対象外）";
         if (p.note) n += " ・ " + p.note;
         n += " ・ " + new Date(p.createdAt).toLocaleDateString("ja-JP");
         box.appendChild(el("div", "sm", n));
@@ -1208,8 +1266,19 @@
     // 設定 UI
     // ------------------------------------------------------------------
     function renderSettings() {
-      $("setThreshold").value = config.threshold;
-      $("valThreshold").textContent = fmt(config.threshold, 2);
+      var jf = config.model === "jf";
+      $("setModel").value = config.model;
+      var th = $("setThreshold");
+      th.min = jf ? 0.20 : 0.30;
+      th.max = jf ? 0.80 : 0.70;
+      th.value = activeThreshold();
+      $("valThreshold").textContent = fmt(activeThreshold(), 2);
+      $("thresholdLabel").innerHTML = jf
+        ? "一致しきい値<small>コサイン類似度。<b>大きいほど厳格</b>で、0.4 が推奨値です</small>"
+        : "一致しきい値<small>距離。<b>小さいほど厳格</b>で、0.4〜0.5 が目安です</small>";
+      $("modelNote").innerHTML = jf
+        ? "JAPANESE FACE V1（日本人の顔に最適化・512次元）。<b>研究・社内実験・試験運用はApache-2.0の条件で使えます。商用サービスとしての実稼働には作者との契約が必要です</b>"
+        : "同梱の128次元モデル。切り替えると特徴量の形式が変わり、登録し直しが必要です";
       $("setStreak").value = config.streak;
       $("valStreak").textContent = config.streak + " 回";
       $("setLiveness").checked = !!config.liveness;
@@ -1217,7 +1286,7 @@
       if (!$("setInputSize").value) { config.inputSize = "auto"; $("setInputSize").value = "auto"; }
       $("setScore").value = config.scoreThreshold;
       $("valScore").textContent = fmt(config.scoreThreshold, 2);
-      $("hintThreshold").textContent = fmt(config.threshold, 2);
+      $("hintThreshold").textContent = fmt(activeThreshold(), 2);
       $("hintStreak").textContent = config.streak;
       $("stageInner").classList.toggle("mirror", !!config.mirror);
       $("mirrorToggle").textContent = "左右反転 " + (config.mirror ? "ON" : "OFF");
@@ -1285,7 +1354,22 @@
       e.target.value = "";
     };
 
-    $("setThreshold").oninput = function (e) { config.threshold = Number(e.target.value); saveConfig(); };
+    $("setThreshold").oninput = function (e) {
+      if (config.model === "jf") config.thresholdJf = Number(e.target.value);
+      else config.threshold = Number(e.target.value);
+      saveConfig();
+    };
+    $("setModel").onchange = function (e) {
+      var want = e.target.value;
+      $("modelNote").textContent = want === "jf" ? "モデルを取得しています（約40MB）…" : "切り替えています…";
+      reader.setRecognizer(want).then(function (actual) {
+        config.model = actual;
+        saveConfig();
+        renderPeople();
+        if (actual !== want) alert("JAPANESE FACE V1 を読み込めませんでした。標準モデルのままにします。");
+        else if (actual === "jf") alert("JAPANESE FACE V1 に切り替えました。\n特徴量の形式が変わるため、顔を登録し直してください。");
+      });
+    };
     $("setStreak").oninput = function (e) { config.streak = Number(e.target.value); saveConfig(); };
     $("setLiveness").onchange = function (e) { config.liveness = e.target.checked; saveConfig(); };
     $("setInputSize").onchange = function (e) {

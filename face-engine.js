@@ -473,6 +473,8 @@
     var getConfig = opts.getConfig || function () { return { inputSize: "auto", scoreThreshold: 0.5 }; };
     var legacy = createDetector(getConfig);
     var mp = null, mpImage = null;
+    var recognizer = "dlib";   // dlib | jf
+    var jf = null;
     var self = {
       legacy: legacy,
       get usingMediaPipe() { return !!mp; },
@@ -483,6 +485,25 @@
         return createMediaPipe(opts.mediapipe || {}).then(function (m) {
           mp = m;
           return !!m;
+        });
+      },
+
+      get recognizer() { return recognizer; },
+
+      /*
+       * 特徴量の抽出に使うモデルを選ぶ。
+       *   "dlib" … 同梱の128次元モデル（既定・軽量）
+       *   "jf"   … JAPANESE FACE V1（512次元・約40MBを初回に取得）
+       * JAPANESE FACE V1 は MediaPipe の478点が必要なので、
+       * MediaPipe が使えない環境では dlib のまま据え置く。
+       */
+      setRecognizer: function (name) {
+        if (name !== "jf") { recognizer = "dlib"; return Promise.resolve("dlib"); }
+        if (!mp) { recognizer = "dlib"; return Promise.resolve("dlib"); }
+        if (!jf) jf = createJapaneseFace(opts.japaneseFace || {});
+        return jf.init().then(function (ok) {
+          recognizer = ok ? "jf" : "dlib";
+          return recognizer;
         });
       },
 
@@ -507,6 +528,9 @@
             if (!crops.length) return null;
             var hit2 = mp.detect(crops[0]);
             if (!hit2) { self.lastSource = null; return null; }
+            hit2.cropSource = crops[0];
+            hit2.cropWidth = crops[0].width;
+            hit2.cropHeight = crops[0].height;
             return finish(video, hit2, rect.x, rect.y, "mediapipe-crop");
           });
         });
@@ -530,7 +554,19 @@
     function finish(input, hit, dx, dy, source) {
       var rect = hit.alignedRect;
       if (dx || dy) rect = new faceapi.Rect(rect.x + dx, rect.y + dy, rect.width, rect.height);
-      return describeAligned(input, rect).then(function (desc) {
+      var descPromise;
+      if (recognizer === "jf" && jf && jf.ready) {
+        // JAPANESE FACE V1 は MediaPipe の478点からアフィン変換で切り出す。
+        // 切り出し経由で検出した場合、ランドマークは切り出し画像の座標系にあるので
+        // 切り出し画像をそのまま入力にする。
+        var src = hit.cropSource || input;
+        descPromise = jf.describe(src, hit.landmarks,
+          src.videoWidth || src.naturalWidth || src.width,
+          src.videoHeight || src.naturalHeight || src.height, null);
+      } else {
+        descPromise = describeAligned(input, rect);
+      }
+      return descPromise.then(function (desc) {
         if (!desc) { self.lastSource = null; return null; }
         self.lastSource = source;
         var box = hit.box;
@@ -542,6 +578,7 @@
           blink: hit.blink,
           alignedRect: rect,
           faceCount: hit.faceCount,
+          model: (recognizer === "jf" && jf && jf.ready) ? "jf" : "dlib",
           source: source
         };
       });
@@ -555,6 +592,7 @@
         descriptor: Array.from(det.descriptor),
         blink: blink,
         alignedRect: null,
+        model: "dlib",
         source: source,
         faceCount: det.faceCount,
         usedSize: det.usedSize
@@ -595,7 +633,226 @@
     };
   }
 
+  // ------------------------------------------------------------------
+  // JAPANESE FACE V1（日本人の顔に最適化された認識モデル）
+  // ------------------------------------------------------------------
+  /*
+   * yKesamaru氏 / 東海顔認証 の EfficientNetV2 + ArcFace モデル。
+   * 512次元の特徴量を出力し、比較はコサイン類似度で行う（既定しきい値 0.4）。
+   *
+   * ライセンス：研究目的・非稼働の商用利用は Apache License 2.0 の条件で使用可。
+   * 商用サービスとして実稼働させる場合は作者との別途契約が必要。
+   * 詳細は vendor/japanese-face/LICENSE.md を参照。
+   *
+   * 前処理は FACE01 の実装に合わせている：
+   *   dlib.get_face_chip(size=224, padding=0.1) 相当のアフィン切り出し
+   *   → RGB → 0〜1 → ImageNet正規化 → NCHW
+   */
+  var JF_MEAN = [0.485, 0.456, 0.406];
+  var JF_STD = [0.229, 0.224, 0.225];
+  var JF_SIZE = 224;
+  var JF_PADDING = 0.1;
+
+  // dlib の5点モデルにおける正準座標（dlib/image_transforms/interpolation.h より）
+  var DLIB_CHIP_5 = [
+    [0.8595674595992, 0.2134981538014], // 画像右側の目・外側
+    [0.6460604764104, 0.2289674387677], // 画像右側の目・内側
+    [0.1205750620789, 0.2137274526848], // 画像左側の目・外側
+    [0.3340850613712, 0.2290642403242], // 画像左側の目・内側
+    [0.4901123135679, 0.6277975316475]  // 鼻の下
+  ];
+
+  // MediaPipe の478点から、dlibの5点に対応する位置を取る
+  var MP_5POINT = { rightOuter: 263, rightInner: 362, leftOuter: 33, leftInner: 133, nose: 2 };
+
+  /*
+   * 相似変換（回転・拡大縮小・平行移動）を最小二乗で求める（Umeyama法）。
+   * from（切り出し座標）→ to（画像座標）の変換 M, t を返す。
+   */
+  function similarityTransform(from, to) {
+    var n = from.length;
+    var mfx = 0, mfy = 0, mtx = 0, mty = 0;
+    for (var i = 0; i < n; i++) { mfx += from[i][0]; mfy += from[i][1]; mtx += to[i][0]; mty += to[i][1]; }
+    mfx /= n; mfy /= n; mtx /= n; mty /= n;
+    var h00 = 0, h01 = 0, h10 = 0, h11 = 0, varF = 0;
+    for (i = 0; i < n; i++) {
+      var fx = from[i][0] - mfx, fy = from[i][1] - mfy;
+      var tx = to[i][0] - mtx, ty = to[i][1] - mty;
+      h00 += tx * fx; h01 += tx * fy; h10 += ty * fx; h11 += ty * fy;
+      varF += fx * fx + fy * fy;
+    }
+    h00 /= n; h01 /= n; h10 /= n; h11 /= n; varF /= n;
+    // 2x2 の特異値分解（回転成分だけが必要なので極分解で求める）
+    var theta = Math.atan2(h10 - h01, h00 + h11); // 回転角
+    var cos = Math.cos(theta), sin = Math.sin(theta);
+    var scale = varF > 0 ? ((h00 + h11) * cos + (h10 - h01) * sin) / varF : 1;
+    var m00 = scale * cos, m01 = -scale * sin, m10 = scale * sin, m11 = scale * cos;
+    return {
+      m: [m00, m01, m10, m11],
+      t: [mtx - (m00 * mfx + m01 * mfy), mty - (m10 * mfx + m11 * mfy)]
+    };
+  }
+
+  /*
+   * 顔を 224x224 に切り出す。5点は
+   *   [画像右目外, 画像右目内, 画像左目外, 画像左目内, 鼻の下] の順（画像座標）。
+   */
+  function faceChip(input, points5, canvas) {
+    var pad = JF_PADDING, size = JF_SIZE;
+    var from = DLIB_CHIP_5.map(function (p) {
+      return [((pad + p[0]) / (2 * pad + 1)) * size, ((pad + p[1]) / (2 * pad + 1)) * size];
+    });
+    var tr = similarityTransform(from, points5);
+    // 画像 → 切り出し の変換は、求めた変換の逆
+    var m = tr.m, det = m[0] * m[3] - m[1] * m[2];
+    if (!det) return null;
+    var i00 = m[3] / det, i01 = -m[1] / det, i10 = -m[2] / det, i11 = m[0] / det;
+    var bx = -(i00 * tr.t[0] + i01 * tr.t[1]);
+    var by = -(i10 * tr.t[0] + i11 * tr.t[1]);
+    var c = canvas || document.createElement("canvas");
+    c.width = size; c.height = size;
+    var ctx = c.getContext("2d", { willReadFrequently: true });
+    ctx.setTransform(i00, i10, i01, i11, bx, by);
+    ctx.drawImage(input, 0, 0);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    return c;
+  }
+
+  function createJapaneseFace(opts) {
+    opts = opts || {};
+    var base = opts.baseUri || "vendor/japanese-face";
+    var ortBase = opts.ortUri || "vendor/onnxruntime";
+    var session = null, inputName = null, chipCanvas = null;
+
+    function loadOrt() {
+      if (global.ort) return Promise.resolve(global.ort);
+      return new Promise(function (resolve, reject) {
+        var s = document.createElement("script");
+        s.src = ortBase + "/ort.wasm.min.js";
+        s.onload = function () { resolve(global.ort); };
+        s.onerror = function () { reject(new Error("ONNX Runtime を読み込めませんでした")); };
+        document.head.appendChild(s);
+      });
+    }
+
+    return {
+      get ready() { return !!session; },
+      /* 初回の呼び出しでランタイムとモデル（約40MB）を取得する */
+      init: function () {
+        if (session) return Promise.resolve(true);
+        return loadOrt().then(function (ort) {
+          // 相対パスのままだとモジュール指定子として解決できずに失敗するため、絶対URLにする
+          ort.env.wasm.wasmPaths = new URL(ortBase + "/", document.baseURI).href;
+          ort.env.wasm.numThreads = 1; // GitHub Pages では COOP/COEP を返せないため
+          return ort.InferenceSession.create(base + "/JAPANESE_FACE_V1.onnx", {
+            executionProviders: ["wasm"], graphOptimizationLevel: "all"
+          });
+        }).then(function (s) {
+          session = s;
+          inputName = s.inputNames[0];
+          return true;
+        }).catch(function (e) {
+          console.warn("JAPANESE FACE V1 を初期化できませんでした", e);
+          session = null;
+          return false;
+        });
+      },
+
+      /* MediaPipe の478点（正規化座標）から512次元の特徴量を作る */
+      describe: function (input, landmarks, imgW, imgH, offset) {
+        if (!session) return Promise.resolve(null);
+        var dx = offset ? offset.x : 0, dy = offset ? offset.y : 0;
+        function pt(i) {
+          return [landmarks[i].x * imgW + dx, landmarks[i].y * imgH + dy];
+        }
+        var points5 = [
+          pt(MP_5POINT.rightOuter), pt(MP_5POINT.rightInner),
+          pt(MP_5POINT.leftOuter), pt(MP_5POINT.leftInner),
+          pt(MP_5POINT.nose)
+        ];
+        chipCanvas = faceChip(input, points5, chipCanvas);
+        if (!chipCanvas) return Promise.resolve(null);
+        var px = chipCanvas.getContext("2d").getImageData(0, 0, JF_SIZE, JF_SIZE).data;
+        var n = JF_SIZE * JF_SIZE;
+        var data = new Float32Array(3 * n);
+        for (var i = 0; i < n; i++) {
+          data[i] = (px[i * 4] / 255 - JF_MEAN[0]) / JF_STD[0];
+          data[n + i] = (px[i * 4 + 1] / 255 - JF_MEAN[1]) / JF_STD[1];
+          data[2 * n + i] = (px[i * 4 + 2] / 255 - JF_MEAN[2]) / JF_STD[2];
+        }
+        var ort = global.ort;
+        var feeds = {};
+        feeds[inputName] = new ort.Tensor("float32", data, [1, 3, JF_SIZE, JF_SIZE]);
+        return session.run(feeds).then(function (out) {
+          var key = Object.keys(out)[0];
+          return Array.from(out[key].data);
+        });
+      },
+      chip: function () { return chipCanvas; }
+    };
+  }
+
+  // コサイン類似度（JAPANESE FACE V1 用。1に近いほど同一人物）
+  function cosineSimilarity(a, b) {
+    var dot = 0, na = 0, nb = 0;
+    for (var i = 0; i < a.length; i++) { dot += a[i] * b[i]; na += a[i] * a[i]; nb += b[i] * b[i]; }
+    var d = Math.sqrt(na) * Math.sqrt(nb);
+    return d ? dot / d : 0;
+  }
+
+  // 登録者の中から最も似ている人を返す（コサイン類似度版）
+  function identifyCosine(descriptor, people) {
+    var best = { person: null, sim: -1 };
+    for (var i = 0; i < people.length; i++) {
+      var p = people[i];
+      var list = p.descriptors && p.descriptors.length ? p.descriptors : [p.descriptor];
+      var max = -1;
+      for (var j = 0; j < list.length; j++) {
+        if (!list[j] || list[j].length !== descriptor.length) continue;
+        var c = cosineSimilarity(descriptor, list[j]);
+        if (c > max) max = c;
+      }
+      if (max > best.sim) best = { person: p, sim: max };
+    }
+    return best;
+  }
+
+  /*
+   * 登録者の中から本人を探す（モデルの違いを吸収する）。
+   *   dlib … ユークリッド距離。小さいほど似ている（threshold以下で一致）
+   *   jf   … コサイン類似度。大きいほど似ている（threshold以上で一致）
+   * 登録時と違うモデルの特徴量とは比較しない。
+   */
+  function matchPeople(descriptor, people, model, threshold) {
+    model = model || "dlib";
+    var same = people.filter(function (p) { return (p.model || "dlib") === model; });
+    if (model === "jf") {
+      var b = identifyCosine(descriptor, same);
+      return {
+        person: b.person, score: b.sim, kind: "cos",
+        isMatch: !!b.person && b.sim >= threshold,
+        // 表示用（0〜1）。しきい値付近が中央に来るように正規化する
+        ratio: Math.max(0, Math.min(1, (b.sim + 1) / 2)),
+        skipped: people.length - same.length
+      };
+    }
+    var d = identify(descriptor, same);
+    return {
+      person: d.person, score: d.dist, kind: "dist",
+      isMatch: !!d.person && d.dist <= threshold,
+      ratio: d.person ? Math.max(0, Math.min(1, 1 - d.dist / 0.8)) : 0,
+      skipped: people.length - same.length
+    };
+  }
+
   global.FaceEngine = {
+    matchPeople: matchPeople,
+    createJapaneseFace: createJapaneseFace,
+    cosineSimilarity: cosineSimilarity,
+    identifyCosine: identifyCosine,
+    faceChip: faceChip,
+    similarityTransform: similarityTransform,
+    MP_5POINT: MP_5POINT,
     createReader: createReader,
     createLiveness: createLiveness,
     createMediaPipe: createMediaPipe,

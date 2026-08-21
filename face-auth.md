@@ -16,6 +16,31 @@ python3 -m http.server 8000
 
 別端末から使う場合は https で配信してください（localhost 以外はカメラが許可されません）。
 
+## iPad / スマホで試す
+
+iOS Safari はカメラの利用に **https（または localhost）** を要求します。LAN の `http://192.168.x.x:8000` では
+カメラが起動しないため、次のどちらかを使ってください。
+
+### A. GitHub Pages で配信する（PC不要）
+
+1. GitHub → リポジトリの **Settings → Pages** を開く
+2. Source を「Deploy from a branch」、Branch にこのブランチ（または `main`）と `/ (root)` を指定して Save
+3. 1〜2分待って、iPad の Safari で `https://<ユーザー名>.github.io/a/face-auth.html` を開く
+
+ページを公開しても、**登録した顔のデータは開いた端末のブラウザ内（localStorage）にしか保存されません**。
+サーバーにも他の閲覧者にも渡りません。
+
+### B. PC でサーバーを立ててトンネル経由で開く
+
+PC 側で `python3 -m http.server 8000` を動かし、`cloudflared tunnel --url http://localhost:8000` などで
+https の一時URLを発行して、そのURLを iPad で開きます。
+
+### iPad で使うときのポイント
+
+- Safari が出すカメラ許可のダイアログで「許可」を選ぶ（拒否した場合は AA ボタン →「Webサイトの設定」から変更）
+- 前面カメラは画角が広く顔が小さく写りがちです。検出解像度は「自動」のままにしてください
+- 初回は顔検出モデルの初期化に数秒かかります。「顔を検出中…」のまま数秒待ってください
+
 ## 使い方
 
 1. **顔を登録**タブ … 名前を入れ、本人同意にチェック → カメラを開始 →

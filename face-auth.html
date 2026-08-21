@@ -1,0 +1,1497 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>顔認証システム — MILK STAND</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&family=Inter:wght@400;500;600;700&display=swap"
+    rel="stylesheet"
+  />
+  <style>
+    :root {
+      --bg: #ffffff;
+      --bg-2: #fafafa;
+      --bg-3: #f4f4f4;
+      --ink: #0a0a0a;
+      --ink-2: #1a1a1a;
+      --mute: #767676;
+      --mute-2: #a8a8a8;
+      --line: #eaeaea;
+      --line-soft: #f0f0f0;
+      --blue: #0047ff;
+      --blue-ink: #0036c5;
+      --blue-soft: #ecf0ff;
+      --danger: #d83a3a;
+      --danger-soft: #fdeeee;
+      --ok: #1f8a5b;
+      --ok-soft: #e9f6ef;
+      --warn: #b07b00;
+      --warn-soft: #fdf4e0;
+      --radius: 10px;
+      --shadow-sm: 0 1px 0 rgba(10, 10, 10, 0.04);
+      --shadow-md: 0 8px 32px rgba(10, 10, 10, 0.06);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      min-height: 100%;
+      background: var(--bg-2);
+      color: var(--ink);
+      font-family: "Noto Sans JP", "Inter", system-ui, sans-serif;
+      font-feature-settings: "palt";
+      -webkit-font-smoothing: antialiased;
+      letter-spacing: 0.01em;
+    }
+    button { font: inherit; color: inherit; background: none; border: none; cursor: pointer; letter-spacing: inherit; }
+    input, select { font: inherit; color: inherit; letter-spacing: inherit; }
+    .mono { font-family: "DM Mono", "Inter", monospace; letter-spacing: 0.04em; }
+    .num { font-variant-numeric: tabular-nums; }
+
+    .wrap { max-width: 1120px; margin: 0 auto; padding: 24px 20px 64px; }
+
+    /* ---- header ---- */
+    header.top {
+      display: flex; align-items: center; gap: 16px;
+      padding-bottom: 18px; border-bottom: 1px solid var(--line);
+      flex-wrap: wrap;
+    }
+    .brand { display: flex; align-items: baseline; gap: 10px; }
+    .brand h1 { font-size: 19px; font-weight: 600; letter-spacing: 0.02em; }
+    .brand .sub { font-size: 11px; color: var(--mute-2); text-transform: uppercase; }
+    .spacer { flex: 1 1 auto; }
+    .pill {
+      display: inline-flex; align-items: center; gap: 7px;
+      padding: 6px 11px; border-radius: 999px; font-size: 11.5px;
+      background: var(--bg-3); color: var(--mute); border: 1px solid var(--line);
+      white-space: nowrap;
+    }
+    .pill .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--mute-2); }
+    .pill.is-ok { background: var(--ok-soft); color: var(--ok); border-color: transparent; }
+    .pill.is-ok .dot { background: var(--ok); }
+    .pill.is-load { background: var(--blue-soft); color: var(--blue-ink); border-color: transparent; }
+    .pill.is-load .dot { background: var(--blue); animation: blink 1s steps(2, start) infinite; }
+    .pill.is-err { background: var(--danger-soft); color: var(--danger); border-color: transparent; }
+    .pill.is-err .dot { background: var(--danger); }
+    @keyframes blink { to { opacity: 0.25; } }
+
+    /* ---- tabs ---- */
+    nav.tabs { display: flex; gap: 4px; margin: 18px 0 22px; }
+    nav.tabs button {
+      padding: 8px 14px; border-radius: 999px; font-size: 13px; color: var(--mute);
+      border: 1px solid transparent;
+    }
+    nav.tabs button:hover { color: var(--ink); background: var(--bg-3); }
+    nav.tabs button[aria-selected="true"] { background: var(--ink); color: #fff; }
+
+    .panel[hidden] { display: none; }
+    .cols { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+    @media (max-width: 880px) { .cols { grid-template-columns: minmax(0, 1fr); } }
+
+    .card {
+      background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius);
+      box-shadow: var(--shadow-sm); padding: 16px;
+    }
+    .card + .card { margin-top: 16px; }
+    .card h2 { font-size: 13px; font-weight: 600; margin-bottom: 12px; letter-spacing: 0.03em; }
+    .card h2 .hint { font-weight: 400; color: var(--mute-2); font-size: 11px; margin-left: 8px; }
+
+    /* ---- camera stage ---- */
+    #stage { position: relative; }
+    .stage-inner {
+      position: relative; width: 100%; aspect-ratio: 4 / 3;
+      background: #0a0a0a; border-radius: var(--radius); overflow: hidden;
+      /* 縦持ちのタブレット・スマホでカメラが画面を占有しすぎないように */
+      max-width: calc(62vh * 4 / 3); margin: 0 auto;
+    }
+    .stage-inner video, .stage-inner canvas {
+      position: absolute; inset: 0; width: 100%; height: 100%;
+      object-fit: cover; display: block;
+    }
+    .stage-inner.mirror video, .stage-inner.mirror canvas { transform: scaleX(-1); }
+    .stage-msg {
+      position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+      color: #fff; font-size: 13px; text-align: center; padding: 24px; line-height: 1.7;
+      background: rgba(10, 10, 10, 0.72); z-index: 3;
+    }
+    .stage-msg[hidden] { display: none; }
+    .stage-badge {
+      position: absolute; left: 12px; top: 12px; z-index: 2;
+      display: flex; gap: 6px; flex-wrap: wrap;
+    }
+    .badge {
+      font-size: 10.5px; padding: 4px 9px; border-radius: 999px;
+      background: rgba(255, 255, 255, 0.9); color: var(--ink-2);
+      backdrop-filter: blur(6px);
+    }
+    .badge.live-ok { background: var(--ok); color: #fff; }
+    .badge.live-wait { background: rgba(255, 255, 255, 0.9); color: var(--warn); }
+
+    .stage-bar { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; align-items: center; }
+
+    .btn {
+      padding: 9px 16px; border-radius: 8px; font-size: 13px; font-weight: 500;
+      background: var(--bg-3); color: var(--ink-2); border: 1px solid var(--line);
+      transition: background 0.12s ease;
+    }
+    .btn:hover:not(:disabled) { background: var(--line-soft); }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn.primary { background: var(--blue); color: #fff; border-color: transparent; }
+    .btn.primary:hover:not(:disabled) { background: var(--blue-ink); }
+    .btn.danger { background: var(--danger-soft); color: var(--danger); border-color: transparent; }
+    .btn.ghost { background: transparent; }
+    .btn.sm { padding: 5px 10px; font-size: 11.5px; }
+
+    /* ---- result ---- */
+    .result {
+      display: flex; align-items: center; gap: 14px; padding: 16px;
+      border-radius: var(--radius); background: var(--bg-3); min-height: 92px;
+    }
+    .result.ok { background: var(--ok-soft); }
+    .result.ng { background: var(--danger-soft); }
+    .result.pending { background: var(--blue-soft); }
+    .result .avatar {
+      width: 60px; height: 60px; border-radius: 8px; object-fit: cover;
+      background: var(--line); flex: 0 0 auto;
+    }
+    .result .who { font-size: 20px; font-weight: 600; line-height: 1.3; }
+    .result .meta { font-size: 11.5px; color: var(--mute); margin-top: 4px; }
+    .result.ok .meta { color: var(--ok); }
+    .result.ng .meta { color: var(--danger); }
+
+    .meter { height: 4px; border-radius: 999px; background: rgba(10, 10, 10, 0.08); margin-top: 8px; overflow: hidden; }
+    .meter > i { display: block; height: 100%; background: var(--ink); border-radius: 999px; transition: width 0.15s ease; }
+    .result.ok .meter > i { background: var(--ok); }
+    .result.ng .meter > i { background: var(--danger); }
+
+    /* ---- list ---- */
+    .log { list-style: none; max-height: 260px; overflow: auto; margin: -4px 0; }
+    .log li {
+      display: flex; align-items: center; gap: 10px; padding: 8px 0;
+      border-bottom: 1px solid var(--line-soft); font-size: 12.5px;
+    }
+    .log li:last-child { border-bottom: none; }
+    .log .t { color: var(--mute-2); font-size: 11px; }
+    .log .n { flex: 1 1 auto; }
+    .log .d { color: var(--mute); }
+    .tag { font-size: 10.5px; padding: 2px 7px; border-radius: 999px; }
+    .tag.ok { background: var(--ok-soft); color: var(--ok); }
+    .tag.ng { background: var(--danger-soft); color: var(--danger); }
+
+    .people { list-style: none; display: grid; gap: 10px; }
+    .people li {
+      display: flex; align-items: center; gap: 12px; padding: 10px;
+      border: 1px solid var(--line); border-radius: 8px;
+    }
+    .people img { width: 46px; height: 46px; border-radius: 6px; object-fit: cover; background: var(--bg-3); }
+    .people .nm { font-size: 14px; font-weight: 500; }
+    .people .sm { font-size: 11px; color: var(--mute-2); margin-top: 2px; }
+
+    .empty { color: var(--mute-2); font-size: 12.5px; padding: 14px 0; text-align: center; }
+
+    /* ---- forms ---- */
+    label.field { display: block; margin-bottom: 12px; }
+    label.field > span { display: block; font-size: 11.5px; color: var(--mute); margin-bottom: 5px; }
+    input[type="text"] {
+      width: 100%; padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px;
+      background: var(--bg); outline: none;
+    }
+    input[type="text"]:focus { border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-soft); }
+    .check { display: flex; gap: 9px; align-items: flex-start; font-size: 12px; color: var(--ink-2); line-height: 1.6; }
+    .check input { margin-top: 3px; flex: 0 0 auto; }
+
+    .shots { display: flex; gap: 6px; margin: 12px 0; flex-wrap: wrap; }
+    .shot {
+      width: 54px; height: 54px; border-radius: 6px; background: var(--bg-3);
+      border: 1px dashed var(--line); display: flex; align-items: center; justify-content: center;
+      font-size: 11px; color: var(--mute-2); overflow: hidden; position: relative;
+    }
+    .shot img { width: 100%; height: 100%; object-fit: cover; }
+    .shot.next { border-color: var(--blue); border-style: solid; color: var(--blue); background: var(--blue-soft); }
+
+    .guide { font-size: 12.5px; color: var(--ink-2); background: var(--bg-3); padding: 10px 12px; border-radius: 8px; line-height: 1.6; }
+
+    .setting { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line-soft); }
+    .setting:last-of-type { border-bottom: none; }
+    .setting .lb { flex: 1 1 auto; font-size: 12.5px; }
+    .setting .lb small { display: block; color: var(--mute-2); font-size: 11px; margin-top: 2px; line-height: 1.5; }
+    .setting input[type="range"] { width: 150px; accent-color: var(--blue); }
+    .setting .val { min-width: 46px; text-align: right; font-size: 12px; color: var(--mute); }
+    .switch { position: relative; width: 38px; height: 22px; flex: 0 0 auto; }
+    .switch input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; z-index: 1; }
+    .switch i { position: absolute; inset: 0; background: var(--line); border-radius: 999px; transition: background 0.15s ease; }
+    .switch i::after {
+      content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px;
+      background: #fff; border-radius: 50%; transition: transform 0.15s ease;
+    }
+    .switch input:checked + i { background: var(--blue); }
+    .switch input:checked + i::after { transform: translateX(16px); }
+
+    .note { font-size: 11.5px; color: var(--mute); line-height: 1.8; }
+    .note b { color: var(--ink-2); font-weight: 500; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; }
+    .sep { height: 1px; background: var(--line-soft); margin: 14px 0; }
+    footer { margin-top: 28px; padding-top: 16px; border-top: 1px solid var(--line); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="top">
+      <div class="brand">
+        <h1>顔認証システム</h1>
+        <span class="sub mono">Face Auth / on-device</span>
+      </div>
+      <div class="spacer"></div>
+      <span class="pill" id="backendPill"><span class="dot"></span><span id="backendText">backend —</span></span>
+      <span class="pill is-load" id="statusPill"><span class="dot"></span><span id="statusText">モデル読み込み中…</span></span>
+    </header>
+
+    <nav class="tabs" role="tablist">
+      <button role="tab" data-tab="auth" aria-selected="true">認証</button>
+      <button role="tab" data-tab="enroll" aria-selected="false">顔を登録</button>
+      <button role="tab" data-tab="manage" aria-selected="false">管理・設定</button>
+    </nav>
+
+    <!-- camera stage (moved between panels) -->
+    <div id="stage" hidden>
+      <div class="stage-inner mirror" id="stageInner">
+        <video id="cam" playsinline muted autoplay></video>
+        <canvas id="overlay"></canvas>
+        <div class="stage-badge" id="stageBadge"></div>
+        <div class="stage-msg" id="stageMsg">カメラは停止しています</div>
+      </div>
+      <div class="stage-bar">
+        <button class="btn primary" id="camToggle">カメラを開始</button>
+        <button class="btn sm ghost" id="mirrorToggle">左右反転 ON</button>
+        <select id="camSelect" class="btn sm" style="max-width: 220px"></select>
+        <span class="spacer"></span>
+        <span class="pill mono num" id="fpsPill"><span class="dot"></span><span id="fpsText">0 fps</span></span>
+      </div>
+    </div>
+
+    <!-- ============ AUTH ============ -->
+    <section class="panel" id="panel-auth">
+      <div class="cols">
+        <div>
+          <div class="card">
+            <h2>カメラ<span class="hint">顔を枠の中央に入れてください</span></h2>
+            <div class="slot" id="slot-auth"></div>
+          </div>
+        </div>
+        <div>
+          <div class="card">
+            <h2>認証結果</h2>
+            <div class="result" id="result">
+              <div class="avatar" id="resAvatarBox"></div>
+              <div style="flex:1 1 auto; min-width:0">
+                <div class="who" id="resWho">待機中</div>
+                <div class="meta" id="resMeta">カメラを開始すると自動で照合します</div>
+                <div class="meter"><i id="resMeter" style="width:0%"></i></div>
+              </div>
+            </div>
+            <div class="sep"></div>
+            <div class="note" id="authHint">
+              しきい値 <b class="mono num" id="hintThreshold">0.45</b> ／ 連続一致 <b class="mono num" id="hintStreak">3</b> 回で確定します。
+            </div>
+          </div>
+          <div class="card">
+            <h2>写真から照合<span class="hint">カメラを使わない場合</span></h2>
+            <div class="row">
+              <input type="file" id="idFile" accept="image/*" hidden />
+              <button class="btn" id="idFileBtn">画像を選んで照合</button>
+            </div>
+            <div class="note" id="idFileNote" style="margin-top:10px">JPEG / PNG の顔写真を 1 枚選ぶと、登録済みの人物と照合します。</div>
+          </div>
+          <div class="card">
+            <h2>認証ログ<span class="hint">この端末に最新50件</span></h2>
+            <ul class="log" id="log"></ul>
+            <div class="empty" id="logEmpty">まだ記録はありません</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ ENROLL ============ -->
+    <section class="panel" id="panel-enroll" hidden>
+      <div class="cols">
+        <div>
+          <div class="card">
+            <h2>カメラ<span class="hint">案内に従って5枚撮影します</span></h2>
+            <div class="slot" id="slot-enroll"></div>
+          </div>
+        </div>
+        <div>
+          <div class="card">
+            <h2>本人情報</h2>
+            <label class="field">
+              <span>名前（表示名）</span>
+              <input type="text" id="enrollName" placeholder="例：山田 太郎" autocomplete="off" />
+            </label>
+            <label class="field">
+              <span>メモ（任意）</span>
+              <input type="text" id="enrollNote" placeholder="例：常連 / いつもコーヒー牛乳" autocomplete="off" />
+            </label>
+            <label class="check">
+              <input type="checkbox" id="consent" />
+              <span>本人の同意を得て顔情報を登録します。顔画像と特徴量はこの端末内にのみ保存され、外部には送信されません。</span>
+            </label>
+            <div class="sep"></div>
+            <div class="guide" id="enrollGuide">カメラを開始し、名前と同意にチェックを入れると撮影できます。</div>
+            <div class="shots" id="shots"></div>
+            <div class="row">
+              <button class="btn primary" id="shotBtn" disabled>撮影する</button>
+              <button class="btn" id="autoShotBtn" disabled>自動で5枚</button>
+              <button class="btn ghost" id="resetShotBtn" disabled>やり直す</button>
+            </div>
+            <div class="sep"></div>
+            <button class="btn primary" id="saveEnroll" disabled style="width:100%">この顔を登録する</button>
+          </div>
+          <div class="card">
+            <h2>写真から登録<span class="hint">1枚だけの簡易登録</span></h2>
+            <input type="file" id="enrollFile" accept="image/*" hidden />
+            <button class="btn" id="enrollFileBtn">画像ファイルを選ぶ</button>
+            <div class="note" style="margin-top:10px">名前と同意を入力してから選んでください。カメラ登録より精度は落ちます。</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ MANAGE ============ -->
+    <section class="panel" id="panel-manage" hidden>
+      <div class="cols">
+        <div>
+          <div class="card">
+            <h2>登録済みの人<span class="hint" id="peopleCount"></span></h2>
+            <ul class="people" id="people"></ul>
+            <div class="empty" id="peopleEmpty">まだ誰も登録されていません</div>
+          </div>
+          <div class="card">
+            <h2>データ</h2>
+            <div class="row">
+              <button class="btn" id="exportBtn">JSONで書き出し</button>
+              <input type="file" id="importFile" accept="application/json" hidden />
+              <button class="btn" id="importBtn">JSONを読み込み</button>
+              <button class="btn danger" id="clearBtn">全データを削除</button>
+            </div>
+            <div class="note" style="margin-top:12px">
+              保存先はこのブラウザの <b>localStorage</b> です。ブラウザのデータを消すと登録も消えます。
+              バックアップした JSON には顔の特徴量とサムネイルが含まれるため、個人情報として扱ってください。
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="card">
+            <h2>認証の設定</h2>
+            <div class="setting">
+              <div class="lb">一致しきい値
+                <small>小さいほど厳格。0.4〜0.5 が目安（顔の距離が小さいほど似ている）</small>
+              </div>
+              <input type="range" id="setThreshold" min="0.30" max="0.70" step="0.01" />
+              <span class="val mono num" id="valThreshold"></span>
+            </div>
+            <div class="setting">
+              <div class="lb">連続一致の回数
+                <small>同じ人物が連続で一致したら確定。誤認証を減らします</small>
+              </div>
+              <input type="range" id="setStreak" min="1" max="8" step="1" />
+              <span class="val mono num" id="valStreak"></span>
+            </div>
+            <div class="setting">
+              <div class="lb">生体検知（まばたき）を必須にする
+                <small>写真をかざす単純ななりすましを防ぎます</small>
+              </div>
+              <label class="switch"><input type="checkbox" id="setLiveness" /><i></i></label>
+            </div>
+            <div class="setting">
+              <div class="lb">検出解像度
+                <small>自動は顔の大きさに合わせて解像度を切り替えます。固定すると、その解像度で写らない大きさの顔は検出できません</small>
+              </div>
+              <select id="setInputSize" class="btn sm">
+                <option value="auto">自動（推奨）</option>
+                <option value="224">224（顔が大きく写るとき）</option>
+                <option value="320">320</option>
+                <option value="416">416（顔が小さく写るとき）</option>
+                <option value="512">512</option>
+              </select>
+            </div>
+            <div class="setting">
+              <div class="lb">検出スコアの下限
+                <small>低いと顔でないものを拾いやすくなります</small>
+              </div>
+              <input type="range" id="setScore" min="0.20" max="0.80" step="0.05" />
+              <span class="val mono num" id="valScore"></span>
+            </div>
+            <div class="row" style="margin-top:12px">
+              <button class="btn sm ghost" id="resetSettings">初期値に戻す</button>
+            </div>
+          </div>
+          <div class="card">
+            <h2>この仕組みについて</h2>
+            <div class="note">
+              <b>処理はすべて端末内</b>：TensorFlow.js 上で顔検出（TinyFaceDetector）→ 68点ランドマークで位置合わせ →
+              顔認識モデルが 128 次元の特徴量を出力します。照合はこの特徴量同士のユークリッド距離で行い、
+              顔画像そのものをサーバーに送ることはありません。<br /><br />
+              <b>限界</b>：照明・角度・マスク・経年で精度は下がります。双子や近親者は誤認することがあります。
+              印刷写真や画面表示を使ったなりすましは、まばたき検知だけでは完全には防げません。
+              入退室管理など重要な用途では、暗証番号やカードとの併用（多要素）を前提にしてください。<br /><br />
+              <b>運用</b>：顔情報は個人情報（日本の個人情報保護法では「個人識別符号」）に当たります。
+              取得目的の明示と本人同意、保管期間と削除方法の明確化をセットで運用してください。
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      <div class="note">
+        顔検出・認識モデル：<span class="mono">@vladmandic/face-api 1.7.15</span>（MIT）を同梱。
+        <span class="mono">vendor/face-api/</span> にライブラリと重みがあります。
+      </div>
+    </footer>
+  </div>
+
+  <script src="vendor/face-api/face-api.js"></script>
+  <script>
+  (function () {
+    "use strict";
+
+    // ------------------------------------------------------------------
+    // 定数・設定
+    // ------------------------------------------------------------------
+    var LOCAL_MODEL_URI = "vendor/face-api/model";
+    var CDN_MODEL_URI = "https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.15/model";
+
+    var KEY_PEOPLE = "faceauth.people.v1";
+    var KEY_CONFIG = "faceauth.config.v1";
+    var KEY_LOG = "faceauth.log.v1";
+
+    var DEFAULTS = {
+      threshold: 0.45,     // 128次元特徴量のユークリッド距離
+      streak: 3,           // 連続一致回数
+      liveness: false,     // まばたき必須
+      inputSize: "auto",  // "auto" か 224/320/416/512
+      scoreThreshold: 0.5,
+      mirror: true
+    };
+
+    // TinyFaceDetector は inputSize によって得意な顔の大きさが変わる。
+    // 小さい値ほど「大きく写った顔」、大きい値ほど「小さく写った顔」に強いので、
+    // 自動モードでは直近に成功したサイズを軸に候補を巡回させる。
+    var SIZE_LADDER = [224, 320, 416, 160, 512];
+    var IMAGE_SIZES = [224, 320, 416, 512, 160];
+
+    var SHOT_GUIDE = [
+      "正面をまっすぐ見てください",
+      "少しだけ右を向いてください",
+      "少しだけ左を向いてください",
+      "少しあごを引いてください",
+      "少しあごを上げてください"
+    ];
+    var SHOT_COUNT = SHOT_GUIDE.length;
+
+    var LIVENESS_WINDOW_MS = 10000; // まばたき検知の有効時間
+    var EAR_CLOSED = 0.19;          // 目を閉じたと判定する開眼度
+    var EAR_OPEN = 0.25;            // 目を開いたと判定する開眼度
+    var RESULT_HOLD_MS = 3500;      // 結果を表示し続ける時間
+
+    // ------------------------------------------------------------------
+    // 小さなユーティリティ
+    // ------------------------------------------------------------------
+    function $(id) { return document.getElementById(id); }
+    function el(tag, cls, text) {
+      var n = document.createElement(tag);
+      if (cls) n.className = cls;
+      if (text != null) n.textContent = text;
+      return n;
+    }
+    function clamp(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); }
+    function fmt(n, d) { return Number(n).toFixed(d == null ? 3 : d); }
+    function nowTime() {
+      var d = new Date();
+      return String(d.getHours()).padStart(2, "0") + ":" +
+             String(d.getMinutes()).padStart(2, "0") + ":" +
+             String(d.getSeconds()).padStart(2, "0");
+    }
+    function uid() {
+      return "p_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+    }
+    function readJSON(key, fallback) {
+      try {
+        var raw = localStorage.getItem(key);
+        return raw ? JSON.parse(raw) : fallback;
+      } catch (e) { return fallback; }
+    }
+    function writeJSON(key, value) {
+      try {
+        localStorage.setItem(key, JSON.stringify(value));
+        return true;
+      } catch (e) {
+        alert("保存に失敗しました（ブラウザの保存容量が上限の可能性があります）");
+        return false;
+      }
+    }
+
+    // ------------------------------------------------------------------
+    // 状態
+    // ------------------------------------------------------------------
+    var config = Object.assign({}, DEFAULTS, readJSON(KEY_CONFIG, {}));
+    var people = readJSON(KEY_PEOPLE, []);
+    var logs = readJSON(KEY_LOG, []);
+
+    var modelsReady = false;
+    var stream = null;
+    var running = false;      // 推論ループが回っているか
+    var mode = "auth";        // auth | enroll
+    var lastFrameTs = 0;
+    var fpsAvg = 0;
+
+    var matchStreak = { id: null, count: 0 };
+    var holdUntil = 0;        // 結果を固定表示する期限
+    var lastLoggedId = null;
+    var lastLoggedAt = 0;
+
+    var liveness = { eyesClosed: false, lastBlinkAt: 0, blinks: 0 };
+
+    var enroll = { shots: [], busy: false, autoTimer: null };
+
+    var sizeIdx = 1;        // SIZE_LADDER 内の現在位置（自動モード用）
+    var activeSize = null;  // 直近で検出に成功したサイズ
+
+    var video = $("cam");
+    var overlay = $("overlay");
+    var octx = overlay.getContext("2d");
+
+    // ------------------------------------------------------------------
+    // モデル読み込み
+    // ------------------------------------------------------------------
+    function setStatus(text, cls) {
+      $("statusText").textContent = text;
+      $("statusPill").className = "pill" + (cls ? " " + cls : "");
+    }
+
+    function loadFrom(uri) {
+      return Promise.all([
+        faceapi.nets.tinyFaceDetector.loadFromUri(uri),
+        faceapi.nets.faceLandmark68Net.loadFromUri(uri),
+        faceapi.nets.faceRecognitionNet.loadFromUri(uri)
+      ]);
+    }
+
+    function boot() {
+      setStatus("モデル読み込み中…", "is-load");
+      // ローカル同梱 → 失敗したら CDN（file:// で開いた場合の保険）
+      loadFrom(LOCAL_MODEL_URI)
+        .catch(function (e) {
+          console.warn("ローカルのモデル読み込みに失敗、CDNを試します", e);
+          setStatus("モデルをCDNから取得中…", "is-load");
+          return loadFrom(CDN_MODEL_URI);
+        })
+        .then(function () {
+          modelsReady = true;
+          setStatus("準備完了", "is-ok");
+          var backend = "—";
+          try { backend = faceapi.tf.getBackend() || "—"; } catch (e) {}
+          $("backendText").textContent = "backend " + backend;
+          $("stageMsg").textContent = "「カメラを開始」を押してください";
+          $("camToggle").disabled = false;
+          refreshEnrollUI();
+        })
+        .catch(function (e) {
+          console.error(e);
+          modelsReady = false;
+          setStatus("モデルの読み込みに失敗", "is-err");
+          $("stageMsg").innerHTML =
+            "モデルを読み込めませんでした。<br />" +
+            "ローカルサーバー経由で開いてください（例：<span class=\"mono\">python3 -m http.server 8000</span>）。";
+        });
+    }
+
+    // ------------------------------------------------------------------
+    // カメラ
+    // ------------------------------------------------------------------
+    function listCameras() {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+      navigator.mediaDevices.enumerateDevices().then(function (devices) {
+        var sel = $("camSelect");
+        var cams = devices.filter(function (d) { return d.kind === "videoinput"; });
+        sel.innerHTML = "";
+        if (!cams.length) { sel.hidden = true; return; }
+        sel.hidden = false;
+        cams.forEach(function (c, i) {
+          var o = el("option", null, c.label || ("カメラ " + (i + 1)));
+          o.value = c.deviceId;
+          sel.appendChild(o);
+        });
+      }).catch(function () {});
+    }
+
+    function startCamera() {
+      if (!modelsReady) return;
+      var deviceId = $("camSelect").value;
+      var constraints = {
+        audio: false,
+        video: deviceId
+          ? { deviceId: { exact: deviceId }, width: { ideal: 960 }, height: { ideal: 720 } }
+          : { facingMode: "user", width: { ideal: 960 }, height: { ideal: 720 } }
+      };
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        $("stageMsg").hidden = false;
+        $("stageMsg").innerHTML =
+          "このブラウザではカメラを利用できません。<br />https もしくは localhost で開く必要があります。";
+        return;
+      }
+      $("camToggle").disabled = true;
+      navigator.mediaDevices.getUserMedia(constraints).then(function (s) {
+        stream = s;
+        video.srcObject = s;
+        return video.play();
+      }).then(function () {
+        $("stageMsg").hidden = true;
+        $("camToggle").textContent = "カメラを停止";
+        $("camToggle").classList.remove("primary");
+        $("camToggle").disabled = false;
+        running = true;
+        liveness.lastBlinkAt = 0;
+        listCameras();
+        requestAnimationFrame(loop);
+        refreshEnrollUI();
+      }).catch(function (e) {
+        console.error(e);
+        $("camToggle").disabled = false;
+        $("stageMsg").hidden = false;
+        $("stageMsg").innerHTML =
+          "カメラを開始できませんでした（" + (e && e.name ? e.name : "error") + "）。<br />" +
+          "ブラウザのカメラ権限を許可し、https または localhost で開いてください。";
+      });
+    }
+
+    function stopCamera() {
+      running = false;
+      if (stream) {
+        stream.getTracks().forEach(function (t) { t.stop(); });
+        stream = null;
+      }
+      video.srcObject = null;
+      octx.clearRect(0, 0, overlay.width, overlay.height);
+      $("stageBadge").innerHTML = "";
+      $("stageMsg").hidden = false;
+      $("stageMsg").textContent = "カメラは停止しています";
+      $("camToggle").textContent = "カメラを開始";
+      $("camToggle").classList.add("primary");
+      $("fpsText").textContent = "0 fps";
+      stopAutoShot();
+      refreshEnrollUI();
+    }
+
+    // ------------------------------------------------------------------
+    // 特徴量の照合
+    // ------------------------------------------------------------------
+    function distance(a, b) {
+      var s = 0;
+      for (var i = 0; i < a.length; i++) { var d = a[i] - b[i]; s += d * d; }
+      return Math.sqrt(s);
+    }
+
+    // 登録者全員と比較し、最も近い人を返す（各サンプルの最小距離を採用）
+    function identify(descriptor) {
+      var best = { person: null, dist: Infinity };
+      for (var i = 0; i < people.length; i++) {
+        var p = people[i];
+        var list = p.descriptors && p.descriptors.length ? p.descriptors : [p.descriptor];
+        var min = Infinity;
+        for (var j = 0; j < list.length; j++) {
+          var d = distance(descriptor, list[j]);
+          if (d < min) min = d;
+        }
+        if (min < best.dist) best = { person: p, dist: min };
+      }
+      return best;
+    }
+
+    // ------------------------------------------------------------------
+    // まばたき（簡易ライブネス）
+    // ------------------------------------------------------------------
+    function eyeAspectRatio(pts) {
+      var v1 = Math.hypot(pts[1].x - pts[5].x, pts[1].y - pts[5].y);
+      var v2 = Math.hypot(pts[2].x - pts[4].x, pts[2].y - pts[4].y);
+      var h = Math.hypot(pts[0].x - pts[3].x, pts[0].y - pts[3].y);
+      return h === 0 ? 0 : (v1 + v2) / (2 * h);
+    }
+
+    function updateLiveness(landmarks) {
+      var ear = (eyeAspectRatio(landmarks.getLeftEye()) + eyeAspectRatio(landmarks.getRightEye())) / 2;
+      if (!liveness.eyesClosed && ear < EAR_CLOSED) {
+        liveness.eyesClosed = true;
+      } else if (liveness.eyesClosed && ear > EAR_OPEN) {
+        liveness.eyesClosed = false;
+        liveness.blinks++;
+        liveness.lastBlinkAt = Date.now();
+      }
+      return ear;
+    }
+
+    function livenessOK() {
+      return Date.now() - liveness.lastBlinkAt < LIVENESS_WINDOW_MS;
+    }
+
+    // ------------------------------------------------------------------
+    // 描画
+    // ------------------------------------------------------------------
+    function syncOverlaySize() {
+      var w = video.videoWidth, h = video.videoHeight;
+      if (!w || !h) return null;
+      // video は object-fit: cover なので、表示領域に合わせた切り出しを考慮する
+      var box = video.getBoundingClientRect();
+      if (overlay.width !== Math.round(box.width) || overlay.height !== Math.round(box.height)) {
+        overlay.width = Math.round(box.width);
+        overlay.height = Math.round(box.height);
+      }
+      var scale = Math.max(overlay.width / w, overlay.height / h);
+      return {
+        scale: scale,
+        dx: (overlay.width - w * scale) / 2,
+        dy: (overlay.height - h * scale) / 2
+      };
+    }
+
+    function drawFace(det, view, color, label) {
+      if (!view) return;
+      var b = det.detection.box;
+      var x = b.x * view.scale + view.dx;
+      var y = b.y * view.scale + view.dy;
+      var w = b.width * view.scale;
+      var h = b.height * view.scale;
+
+      octx.strokeStyle = color;
+      octx.lineWidth = 2;
+      // 角だけのブラケット表示
+      var c = Math.min(w, h) * 0.22;
+      var corners = [[x, y, 1, 1], [x + w, y, -1, 1], [x, y + h, 1, -1], [x + w, y + h, -1, -1]];
+      corners.forEach(function (p) {
+        octx.beginPath();
+        octx.moveTo(p[0] + p[2] * c, p[1]);
+        octx.lineTo(p[0], p[1]);
+        octx.lineTo(p[0], p[1] + p[3] * c);
+        octx.stroke();
+      });
+
+      // ランドマーク
+      if (det.landmarks) {
+        octx.fillStyle = color;
+        det.landmarks.positions.forEach(function (pt) {
+          octx.fillRect(pt.x * view.scale + view.dx - 1, pt.y * view.scale + view.dy - 1, 2, 2);
+        });
+      }
+
+      if (label) {
+        octx.save();
+        // 左右反転表示なので、文字は反転を打ち消す
+        if (config.mirror) {
+          octx.translate(overlay.width, 0);
+          octx.scale(-1, 1);
+          x = overlay.width - x - w;
+        }
+        octx.font = "500 13px 'Noto Sans JP', sans-serif";
+        var tw = octx.measureText(label).width;
+        var ty = Math.max(y - 26, 4);
+        octx.fillStyle = color;
+        octx.fillRect(x, ty, tw + 16, 22);
+        octx.fillStyle = "#fff";
+        octx.fillText(label, x + 8, ty + 15);
+        octx.restore();
+      }
+    }
+
+    function setBadges(items) {
+      var box = $("stageBadge");
+      box.innerHTML = "";
+      items.forEach(function (it) {
+        box.appendChild(el("span", "badge " + (it.cls || ""), it.text));
+      });
+    }
+
+    // ------------------------------------------------------------------
+    // 推論ループ
+    // ------------------------------------------------------------------
+    function tinyOpts(size, score) {
+      return new faceapi.TinyFaceDetectorOptions({
+        inputSize: Number(size),
+        scoreThreshold: Number(score == null ? config.scoreThreshold : score)
+      });
+    }
+
+    // このフレームで試すサイズ（自動モードでは 2 つまで）
+    function nextSizes() {
+      if (config.inputSize !== "auto") return [Number(config.inputSize)];
+      var a = SIZE_LADDER[sizeIdx];
+      var b = SIZE_LADDER[(sizeIdx + 1) % SIZE_LADDER.length];
+      return [a, b];
+    }
+
+    function detectOnce(input, size) {
+      return faceapi
+        .detectSingleFace(input, tinyOpts(size))
+        .withFaceLandmarks()
+        .withFaceDescriptor();
+    }
+
+    // 顔が見つかるまでサイズを変えて試す。見つかったサイズは次フレームで優先する。
+    function detectAdaptive(input) {
+      var sizes = nextSizes();
+      return detectOnce(input, sizes[0]).then(function (d) {
+        if (d) { activeSize = sizes[0]; return d; }
+        if (sizes.length < 2) { activeSize = null; return null; }
+        return detectOnce(input, sizes[1]).then(function (d2) {
+          if (d2) {
+            activeSize = sizes[1];
+            sizeIdx = (sizeIdx + 1) % SIZE_LADDER.length; // 当たったサイズを軸にする
+          } else {
+            activeSize = null;
+            sizeIdx = (sizeIdx + 1) % SIZE_LADDER.length; // 次フレームは別の組み合わせ
+          }
+          return d2;
+        });
+      });
+    }
+
+    var lastResult = null; // 直近の検出（登録用に使う）
+
+    function loop() {
+      if (!running) return;
+      if (!video.videoWidth) { requestAnimationFrame(loop); return; }
+
+      detectAdaptive(video)
+        .then(function (det) {
+          var t = performance.now();
+          if (lastFrameTs) {
+            var fps = 1000 / (t - lastFrameTs);
+            fpsAvg = fpsAvg ? fpsAvg * 0.8 + fps * 0.2 : fps;
+            $("fpsText").textContent = fpsAvg.toFixed(1) + " fps";
+          }
+          lastFrameTs = t;
+
+          var view = syncOverlaySize();
+          octx.clearRect(0, 0, overlay.width, overlay.height);
+          lastResult = det || null;
+
+          if (!det) {
+            setBadges([{ text: "顔を検出中…" }]);
+            handleNoFace();
+          } else {
+            var ear = updateLiveness(det.landmarks);
+            var badges = [
+              { text: "検出 " + Math.round(det.detection.score * 100) + "%" +
+                      (activeSize ? " / " + activeSize + "px" : "") },
+              livenessOK()
+                ? { text: "生体検知 OK", cls: "live-ok" }
+                : { text: "まばたきしてください", cls: "live-wait" }
+            ];
+            badges.push({ text: "EAR " + fmt(ear, 2) });
+            setBadges(badges);
+
+            if (mode === "auth") handleAuthFrame(det, view);
+            else handleEnrollFrame(det, view);
+          }
+        })
+        .catch(function (e) { console.error(e); })
+        .then(function () {
+          if (running) requestAnimationFrame(loop);
+        });
+    }
+
+    // ---- 認証モード ----
+    function handleNoFace() {
+      if (mode !== "auth") return;
+      matchStreak = { id: null, count: 0 };
+      if (Date.now() > holdUntil) {
+        showResult("idle", "顔を探しています", "カメラの正面を向いてください", null, 0);
+      }
+    }
+
+    function handleAuthFrame(det, view) {
+      var desc = Array.from(det.descriptor);
+      var best = identify(desc);
+      var isMatch = best.person && best.dist <= config.threshold;
+      var key = isMatch ? best.person.id : "__unknown__";
+
+      if (matchStreak.id === key) matchStreak.count++;
+      else matchStreak = { id: key, count: 1 };
+
+      var needLive = config.liveness;
+      var liveOK = livenessOK();
+      var confirmed = matchStreak.count >= config.streak;
+
+      var color = isMatch ? "#1f8a5b" : "#d83a3a";
+      if (!confirmed) color = "#0047ff";
+      var label = people.length === 0
+        ? "未登録（登録者なし）"
+        : (isMatch ? best.person.name + "  " + fmt(best.dist, 2) : "未登録の顔  " + fmt(best.dist, 2));
+      drawFace(det, view, color, label);
+
+      if (Date.now() < holdUntil) return; // 直前の確定結果を表示中
+
+      if (!confirmed) {
+        showResult("pending", "照合中…", "一致判定 " + matchStreak.count + " / " + config.streak, null,
+          matchStreak.count / config.streak);
+        return;
+      }
+
+      if (isMatch && needLive && !liveOK) {
+        showResult("pending", best.person.name + " ?", "生体検知の待機中：一度まばたきしてください",
+          best.person, 1 - clamp(best.dist / config.threshold, 0, 1));
+        return;
+      }
+
+      if (isMatch) {
+        var sim = 1 - clamp(best.dist / 0.8, 0, 1);
+        showResult("ok", best.person.name,
+          "認証成功 ・ 距離 " + fmt(best.dist) + " ・ 類似度 " + Math.round(sim * 100) + "%" +
+          (best.person.note ? " ・ " + best.person.note : ""),
+          best.person, sim);
+        pushLog(best.person.name, best.dist, true);
+        holdUntil = Date.now() + RESULT_HOLD_MS;
+        matchStreak = { id: null, count: 0 };
+      } else {
+        var msg = people.length === 0
+          ? "登録者がいません。「顔を登録」タブから登録してください"
+          : "登録されていない顔です ・ 最近傍の距離 " + (best.person ? fmt(best.dist) : "—");
+        showResult("ng", "未登録", msg, null, 0);
+        pushLog(null, best.person ? best.dist : null, false);
+        holdUntil = Date.now() + RESULT_HOLD_MS;
+        matchStreak = { id: null, count: 0 };
+      }
+    }
+
+    function showResult(kind, who, meta, person, ratio) {
+      var box = $("result");
+      box.className = "result" + (kind === "ok" ? " ok" : kind === "ng" ? " ng" : kind === "pending" ? " pending" : "");
+      $("resWho").textContent = who;
+      $("resMeta").textContent = meta;
+      $("resMeter").style.width = Math.round(clamp(ratio || 0, 0, 1) * 100) + "%";
+
+      var slot = $("resAvatarBox");
+      slot.innerHTML = "";
+      if (person && person.thumb) {
+        var img = el("img", "avatar");
+        img.src = person.thumb;
+        img.alt = person.name;
+        slot.replaceWith(img);
+        img.id = "resAvatarBox";
+      } else {
+        var ph = el("div", "avatar");
+        ph.id = "resAvatarBox";
+        slot.replaceWith(ph);
+      }
+    }
+
+    function pushLog(name, dist, ok, force) {
+      var t = Date.now();
+      var id = name || "__unknown__";
+      // 同じ相手の連続記録は 8 秒間まとめる（画像照合は force で毎回記録）
+      if (!force && lastLoggedId === id && t - lastLoggedAt < 8000) return;
+      lastLoggedId = id; lastLoggedAt = t;
+      logs.unshift({ ts: nowTime(), name: name, dist: dist, ok: ok });
+      logs = logs.slice(0, 50);
+      writeJSON(KEY_LOG, logs);
+      renderLog();
+    }
+
+    function renderLog() {
+      var ul = $("log");
+      ul.innerHTML = "";
+      $("logEmpty").hidden = logs.length > 0;
+      logs.forEach(function (l) {
+        var li = el("li");
+        li.appendChild(el("span", "t mono num", l.ts));
+        li.appendChild(el("span", "n", l.name || "未登録の顔"));
+        li.appendChild(el("span", "d mono num", l.dist == null ? "—" : fmt(l.dist, 2)));
+        li.appendChild(el("span", "tag " + (l.ok ? "ok" : "ng"), l.ok ? "認証" : "拒否"));
+        ul.appendChild(li);
+      });
+    }
+
+    // ------------------------------------------------------------------
+    // 登録
+    // ------------------------------------------------------------------
+    // 撮影に向いた写り方かを判定して、具体的な指示を返す
+    function enrollQuality(det) {
+      var ratio = det.detection.box.width / video.videoWidth;
+      if (ratio < 0.12) return { ok: false, msg: "もう少し近づいてください" };
+      if (ratio > 0.8) return { ok: false, msg: "少し離れてください" };
+      if (det.detection.score < 0.45) return { ok: false, msg: "明るさと角度を調整してください" };
+      return { ok: true, msg: "撮影できます" };
+    }
+
+    function handleEnrollFrame(det, view) {
+      var q = enrollQuality(det);
+      drawFace(det, view, q.ok ? "#0047ff" : "#b07b00", q.msg);
+      syncShotButton();
+    }
+
+    function faceThumb(det, size) {
+      size = size || 128;
+      var b = det.detection.box;
+      var m = b.width * 0.28;
+      var sx = clamp(b.x - m, 0, video.videoWidth);
+      var sy = clamp(b.y - m * 1.2, 0, video.videoHeight);
+      var sw = clamp(b.width + m * 2, 1, video.videoWidth - sx);
+      var sh = clamp(b.height + m * 2.2, 1, video.videoHeight - sy);
+      var c = document.createElement("canvas");
+      c.width = size; c.height = size;
+      c.getContext("2d").drawImage(video, sx, sy, sw, sh, 0, 0, size, size);
+      return c.toDataURL("image/jpeg", 0.72);
+    }
+
+    function canShoot() {
+      return running && mode === "enroll" && lastResult && !enroll.busy &&
+             enroll.shots.length < SHOT_COUNT &&
+             $("enrollName").value.trim().length > 0 && $("consent").checked;
+    }
+
+    function takeShot() {
+      if (!canShoot()) return;
+      var det = lastResult;
+      enroll.shots.push({
+        descriptor: Array.from(det.descriptor),
+        thumb: faceThumb(det, enroll.shots.length === 0 ? 160 : 64)
+      });
+      refreshEnrollUI();
+      if (enroll.shots.length >= SHOT_COUNT) stopAutoShot();
+    }
+
+    // ループ中は撮影ボタンの有効・無効だけを更新する（毎フレームのDOM再構築を避ける）
+    function syncShotButton() {
+      var can = canShoot();
+      if ($("shotBtn").disabled !== !can) $("shotBtn").disabled = !can;
+    }
+
+    function startAutoShot() {
+      if (enroll.autoTimer) return;
+      enroll.autoTimer = setInterval(function () {
+        if (enroll.shots.length >= SHOT_COUNT) { stopAutoShot(); return; }
+        takeShot();
+      }, 1400);
+      $("autoShotBtn").textContent = "自動撮影を停止";
+    }
+    function stopAutoShot() {
+      if (enroll.autoTimer) clearInterval(enroll.autoTimer);
+      enroll.autoTimer = null;
+      $("autoShotBtn").textContent = "自動で5枚";
+      refreshEnrollUI();
+    }
+
+    function refreshEnrollUI() {
+      var shots = $("shots");
+      shots.innerHTML = "";
+      for (var i = 0; i < SHOT_COUNT; i++) {
+        var s = enroll.shots[i];
+        var d = el("div", "shot" + (!s && i === enroll.shots.length ? " next" : ""));
+        if (s) {
+          var img = el("img");
+          img.src = s.thumb;
+          d.appendChild(img);
+        } else {
+          d.textContent = String(i + 1);
+        }
+        shots.appendChild(d);
+      }
+
+      var guide = $("enrollGuide");
+      if (!running) {
+        guide.textContent = "まずカメラを開始してください。";
+      } else if (!$("enrollName").value.trim()) {
+        guide.textContent = "名前を入力してください。";
+      } else if (!$("consent").checked) {
+        guide.textContent = "本人同意のチェックを入れてください。";
+      } else if (enroll.shots.length >= SHOT_COUNT) {
+        guide.textContent = "5枚そろいました。「この顔を登録する」を押してください。";
+      } else {
+        guide.textContent = (enroll.shots.length + 1) + " / " + SHOT_COUNT + "：" + SHOT_GUIDE[enroll.shots.length];
+      }
+
+      $("shotBtn").disabled = !canShoot();
+      $("autoShotBtn").disabled = !(running && $("enrollName").value.trim() && $("consent").checked) ||
+                                  enroll.shots.length >= SHOT_COUNT;
+      $("resetShotBtn").disabled = enroll.shots.length === 0;
+      $("saveEnroll").disabled = enroll.shots.length === 0 || !$("enrollName").value.trim() || !$("consent").checked;
+      $("shotBtn").textContent = "撮影する（" + enroll.shots.length + "/" + SHOT_COUNT + "）";
+    }
+
+    function meanDescriptor(list) {
+      var out = new Array(list[0].length).fill(0);
+      list.forEach(function (d) {
+        for (var i = 0; i < d.length; i++) out[i] += d[i];
+      });
+      for (var i = 0; i < out.length; i++) out[i] = out[i] / list.length;
+      return out;
+    }
+
+    function savePerson() {
+      var name = $("enrollName").value.trim();
+      if (!name || !enroll.shots.length) return;
+
+      var descriptors = enroll.shots.map(function (s) { return s.descriptor; });
+
+      // 登録済みの人とあまりに近い場合は確認する（二重登録の防止）
+      var best = identify(meanDescriptor(descriptors));
+      if (best.person && best.dist <= config.threshold) {
+        if (!confirm("「" + best.person.name + "」と非常に似ています（距離 " + fmt(best.dist, 2) + "）。\n" +
+                     "同じ人の可能性があります。それでも新規登録しますか？")) return;
+      }
+
+      people.push({
+        id: uid(),
+        name: name,
+        note: $("enrollNote").value.trim(),
+        descriptors: descriptors,
+        descriptor: meanDescriptor(descriptors),
+        thumb: enroll.shots[0].thumb,
+        createdAt: new Date().toISOString()
+      });
+      writeJSON(KEY_PEOPLE, people);
+
+      enroll.shots = [];
+      $("enrollName").value = "";
+      $("enrollNote").value = "";
+      $("consent").checked = false;
+      refreshEnrollUI();
+      renderPeople();
+      alert("「" + name + "」を登録しました。");
+    }
+
+    // ------------------------------------------------------------------
+    // 画像ファイルからの登録／照合
+    // ------------------------------------------------------------------
+    function loadImage(file) {
+      return new Promise(function (resolve, reject) {
+        var img = new Image();
+        img.onload = function () { resolve(img); };
+        img.onerror = reject;
+        img.src = URL.createObjectURL(file);
+      });
+    }
+
+    // 静止画は総当たりで一番よく写るサイズを選ぶ（顔の大きさが事前に分からないため）
+    function detectFromImage(img) {
+      var best = { size: null, faces: 0, score: 0 };
+      var chain = Promise.resolve();
+      IMAGE_SIZES.forEach(function (size) {
+        chain = chain.then(function () {
+          return faceapi.detectAllFaces(img, tinyOpts(size, 0.4)).then(function (dets) {
+            if (!dets.length) return;
+            var top = dets.reduce(function (m, d) { return d.score > m ? d.score : m; }, 0);
+            if (dets.length > best.faces || (dets.length === best.faces && top > best.score)) {
+              best = { size: size, faces: dets.length, score: top };
+            }
+          });
+        });
+      });
+      return chain.then(function () {
+        if (!best.size) return null;
+        return faceapi
+          .detectAllFaces(img, tinyOpts(best.size, 0.4))
+          .withFaceLandmarks()
+          .withFaceDescriptors()
+          .then(function (results) {
+            if (!results.length) return null;
+            // 一番大きく写っている顔を対象にする
+            results.sort(function (a, b) {
+              return b.detection.box.width * b.detection.box.height -
+                     a.detection.box.width * a.detection.box.height;
+            });
+            var r = results[0];
+            r.faceCount = results.length;
+            r.usedSize = best.size;
+            return r;
+          });
+      });
+    }
+
+    function imageThumb(img, box, size) {
+      size = size || 160;
+      var m = box.width * 0.28;
+      var sx = clamp(box.x - m, 0, img.width);
+      var sy = clamp(box.y - m * 1.2, 0, img.height);
+      var sw = clamp(box.width + m * 2, 1, img.width - sx);
+      var sh = clamp(box.height + m * 2.2, 1, img.height - sy);
+      var c = document.createElement("canvas");
+      c.width = size; c.height = size;
+      c.getContext("2d").drawImage(img, sx, sy, sw, sh, 0, 0, size, size);
+      return c.toDataURL("image/jpeg", 0.72);
+    }
+
+    function identifyFromFile(file) {
+      if (!modelsReady) return;
+      $("idFileNote").textContent = "解析中…";
+      loadImage(file).then(detectFromImage).then(function (det) {
+        if (!det) {
+          $("idFileNote").textContent = "顔を検出できませんでした。別の画像を試してください。";
+          showResult("ng", "検出なし", "画像から顔を検出できませんでした", null, 0);
+          return;
+        }
+        var best = identify(Array.from(det.descriptor));
+        var isMatch = best.person && best.dist <= config.threshold;
+        $("idFileNote").textContent = "画像から照合しました（距離 " + (best.person ? fmt(best.dist) : "—") +
+          " ・ 検出 " + det.usedSize + "px" +
+          (det.faceCount > 1 ? " ・ 顔が " + det.faceCount + " 人分あったため一番大きい顔で照合" : "") + "）";
+        holdUntil = Date.now() + RESULT_HOLD_MS;
+        if (isMatch) {
+          var sim = 1 - clamp(best.dist / 0.8, 0, 1);
+          showResult("ok", best.person.name, "画像で認証成功 ・ 距離 " + fmt(best.dist), best.person, sim);
+          pushLog(best.person.name, best.dist, true, true);
+        } else {
+          showResult("ng", "未登録", "登録されていない顔です ・ 最近傍 " + (best.person ? fmt(best.dist) : "—"), null, 0);
+          pushLog(null, best.person ? best.dist : null, false, true);
+        }
+      }).catch(function (e) {
+        console.error(e);
+        $("idFileNote").textContent = "画像を読み込めませんでした。";
+      });
+    }
+
+    function enrollFromFile(file) {
+      var name = $("enrollName").value.trim();
+      if (!modelsReady) return;
+      if (!name || !$("consent").checked) {
+        alert("名前の入力と本人同意のチェックが必要です。");
+        return;
+      }
+      loadImage(file).then(function (img) {
+        return detectFromImage(img).then(function (det) {
+          if (!det) { alert("顔を検出できませんでした。"); return; }
+          if (det.faceCount > 1 &&
+              !confirm("画像に " + det.faceCount + " 人の顔があります。\n一番大きく写っている顔を登録します。よろしいですか？")) return;
+          var desc = Array.from(det.descriptor);
+          people.push({
+            id: uid(),
+            name: name,
+            note: $("enrollNote").value.trim(),
+            descriptors: [desc],
+            descriptor: desc,
+            thumb: imageThumb(img, det.detection.box, 160),
+            createdAt: new Date().toISOString()
+          });
+          writeJSON(KEY_PEOPLE, people);
+          $("enrollName").value = "";
+          $("enrollNote").value = "";
+          $("consent").checked = false;
+          refreshEnrollUI();
+          renderPeople();
+          alert("「" + name + "」を画像から登録しました。");
+        });
+      }).catch(function (e) {
+        console.error(e);
+        alert("画像を読み込めませんでした。");
+      });
+    }
+
+    // ------------------------------------------------------------------
+    // 管理
+    // ------------------------------------------------------------------
+    function renderPeople() {
+      var ul = $("people");
+      ul.innerHTML = "";
+      $("peopleEmpty").hidden = people.length > 0;
+      $("peopleCount").textContent = people.length ? people.length + " 人" : "";
+      people.forEach(function (p) {
+        var li = el("li");
+        var img = el("img");
+        img.src = p.thumb || "";
+        img.alt = p.name;
+        li.appendChild(img);
+
+        var box = el("div");
+        box.style.flex = "1 1 auto";
+        box.style.minWidth = "0";
+        box.appendChild(el("div", "nm", p.name));
+        var n = (p.descriptors ? p.descriptors.length : 1) + " サンプル";
+        if (p.note) n += " ・ " + p.note;
+        n += " ・ " + new Date(p.createdAt).toLocaleDateString("ja-JP");
+        box.appendChild(el("div", "sm", n));
+        li.appendChild(box);
+
+        var rename = el("button", "btn sm ghost", "名前変更");
+        rename.onclick = function () {
+          var v = prompt("新しい名前", p.name);
+          if (v && v.trim()) { p.name = v.trim(); writeJSON(KEY_PEOPLE, people); renderPeople(); }
+        };
+        li.appendChild(rename);
+
+        var del = el("button", "btn sm danger", "削除");
+        del.onclick = function () {
+          if (!confirm("「" + p.name + "」の顔データを削除します。よろしいですか？")) return;
+          people = people.filter(function (x) { return x.id !== p.id; });
+          writeJSON(KEY_PEOPLE, people);
+          renderPeople();
+        };
+        li.appendChild(del);
+        ul.appendChild(li);
+      });
+    }
+
+    function exportJSON() {
+      var blob = new Blob([JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), people: people }, null, 2)],
+        { type: "application/json" });
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "face-auth-people.json";
+      a.click();
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+    }
+
+    function importJSON(file) {
+      var r = new FileReader();
+      r.onload = function () {
+        try {
+          var data = JSON.parse(r.result);
+          var incoming = Array.isArray(data) ? data : data.people;
+          if (!Array.isArray(incoming)) throw new Error("形式が違います");
+          var added = 0;
+          incoming.forEach(function (p) {
+            if (!p || !p.name || !(p.descriptor || (p.descriptors && p.descriptors.length))) return;
+            people.push({
+              id: p.id && !people.some(function (x) { return x.id === p.id; }) ? p.id : uid(),
+              name: p.name,
+              note: p.note || "",
+              descriptors: p.descriptors && p.descriptors.length ? p.descriptors : [p.descriptor],
+              descriptor: p.descriptor || meanDescriptor(p.descriptors),
+              thumb: p.thumb || "",
+              createdAt: p.createdAt || new Date().toISOString()
+            });
+            added++;
+          });
+          writeJSON(KEY_PEOPLE, people);
+          renderPeople();
+          alert(added + " 件を読み込みました。");
+        } catch (e) {
+          alert("読み込みに失敗しました：" + e.message);
+        }
+      };
+      r.readAsText(file);
+    }
+
+    // ------------------------------------------------------------------
+    // 設定 UI
+    // ------------------------------------------------------------------
+    function renderSettings() {
+      $("setThreshold").value = config.threshold;
+      $("valThreshold").textContent = fmt(config.threshold, 2);
+      $("setStreak").value = config.streak;
+      $("valStreak").textContent = config.streak + " 回";
+      $("setLiveness").checked = !!config.liveness;
+      $("setInputSize").value = String(config.inputSize);
+      if (!$("setInputSize").value) { config.inputSize = "auto"; $("setInputSize").value = "auto"; }
+      $("setScore").value = config.scoreThreshold;
+      $("valScore").textContent = fmt(config.scoreThreshold, 2);
+      $("hintThreshold").textContent = fmt(config.threshold, 2);
+      $("hintStreak").textContent = config.streak;
+      $("stageInner").classList.toggle("mirror", !!config.mirror);
+      $("mirrorToggle").textContent = "左右反転 " + (config.mirror ? "ON" : "OFF");
+    }
+
+    function saveConfig() {
+      writeJSON(KEY_CONFIG, config);
+      renderSettings();
+    }
+
+    // ------------------------------------------------------------------
+    // タブ
+    // ------------------------------------------------------------------
+    function selectTab(name) {
+      ["auth", "enroll", "manage"].forEach(function (t) {
+        $("panel-" + t).hidden = t !== name;
+      });
+      document.querySelectorAll("nav.tabs button").forEach(function (b) {
+        b.setAttribute("aria-selected", String(b.dataset.tab === name));
+      });
+      var stage = $("stage");
+      if (name === "auth" || name === "enroll") {
+        stage.hidden = false;
+        $("slot-" + name).appendChild(stage);
+        mode = name;
+        matchStreak = { id: null, count: 0 };
+        holdUntil = 0;
+      } else {
+        stage.hidden = true;
+        document.body.appendChild(stage);
+        stopAutoShot();
+      }
+      if (name === "manage") renderPeople();
+      if (name === "enroll") refreshEnrollUI();
+    }
+
+    // ------------------------------------------------------------------
+    // イベント
+    // ------------------------------------------------------------------
+    document.querySelectorAll("nav.tabs button").forEach(function (b) {
+      b.onclick = function () { selectTab(b.dataset.tab); };
+    });
+
+    $("camToggle").disabled = true;
+    $("camToggle").onclick = function () { stream ? stopCamera() : startCamera(); };
+    $("mirrorToggle").onclick = function () { config.mirror = !config.mirror; saveConfig(); };
+    $("camSelect").onchange = function () { if (stream) { stopCamera(); startCamera(); } };
+
+    $("enrollName").oninput = refreshEnrollUI;
+    $("enrollNote").oninput = refreshEnrollUI;
+    $("consent").onchange = refreshEnrollUI;
+    $("shotBtn").onclick = takeShot;
+    $("autoShotBtn").onclick = function () { enroll.autoTimer ? stopAutoShot() : startAutoShot(); };
+    $("resetShotBtn").onclick = function () { enroll.shots = []; stopAutoShot(); refreshEnrollUI(); };
+    $("saveEnroll").onclick = savePerson;
+
+    $("enrollFileBtn").onclick = function () { $("enrollFile").click(); };
+    $("enrollFile").onchange = function (e) {
+      if (e.target.files && e.target.files[0]) enrollFromFile(e.target.files[0]);
+      e.target.value = "";
+    };
+    $("idFileBtn").onclick = function () { $("idFile").click(); };
+    $("idFile").onchange = function (e) {
+      if (e.target.files && e.target.files[0]) identifyFromFile(e.target.files[0]);
+      e.target.value = "";
+    };
+
+    $("setThreshold").oninput = function (e) { config.threshold = Number(e.target.value); saveConfig(); };
+    $("setStreak").oninput = function (e) { config.streak = Number(e.target.value); saveConfig(); };
+    $("setLiveness").onchange = function (e) { config.liveness = e.target.checked; saveConfig(); };
+    $("setInputSize").onchange = function (e) {
+      config.inputSize = e.target.value === "auto" ? "auto" : Number(e.target.value);
+      saveConfig();
+    };
+    $("setScore").oninput = function (e) { config.scoreThreshold = Number(e.target.value); saveConfig(); };
+    $("resetSettings").onclick = function () { config = Object.assign({}, DEFAULTS); saveConfig(); };
+
+    $("exportBtn").onclick = exportJSON;
+    $("importBtn").onclick = function () { $("importFile").click(); };
+    $("importFile").onchange = function (e) {
+      if (e.target.files && e.target.files[0]) importJSON(e.target.files[0]);
+      e.target.value = "";
+    };
+    $("clearBtn").onclick = function () {
+      if (!confirm("登録者・ログ・設定をすべて削除します。元に戻せません。よろしいですか？")) return;
+      people = []; logs = []; config = Object.assign({}, DEFAULTS);
+      localStorage.removeItem(KEY_PEOPLE);
+      localStorage.removeItem(KEY_LOG);
+      localStorage.removeItem(KEY_CONFIG);
+      renderPeople(); renderLog(); renderSettings();
+    };
+
+    window.addEventListener("beforeunload", function () {
+      if (stream) stream.getTracks().forEach(function (t) { t.stop(); });
+    });
+
+    // ------------------------------------------------------------------
+    // 起動
+    // ------------------------------------------------------------------
+    renderSettings();
+    renderPeople();
+    renderLog();
+    selectTab("auth");
+    showResult("idle", "待機中", "カメラを開始すると自動で照合します", null, 0);
+    boot();
+    listCameras();
+  })();
+  </script>
+</body>
+</html>

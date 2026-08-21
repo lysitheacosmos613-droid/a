@@ -475,6 +475,7 @@
     var mp = null, mpImage = null;
     var recognizer = "dlib";   // dlib | jf
     var jf = null;
+    var yunet = null;          // stage1 のマルチスケール検出器
     var self = {
       legacy: legacy,
       get usingMediaPipe() { return !!mp; },
@@ -484,9 +485,16 @@
       init: function () {
         return createMediaPipe(opts.mediapipe || {}).then(function (m) {
           mp = m;
-          return !!m;
+          // YuNet は顔の大きさによらず1パスで検出できるので、使えるなら stage1 に据える
+          var y = createYuNet(opts.yunet || {});
+          return y.init().then(function (ok) {
+            yunet = ok ? y : null;
+            return !!m;
+          });
         });
       },
+
+      get usingYuNet() { return !!yunet; },
 
       get recognizer() { return recognizer; },
 
@@ -515,23 +523,45 @@
           });
         }
         var w = video.videoWidth, h = video.videoHeight;
-        var hit = mp.detect(video);
-        if (hit) return finish(video, hit, 0, 0, "mediapipe");
-        // 遠い顔の救済：face-api で位置を探し、その周りを切り出して再挑戦
+
+        // stage1: YuNet で顔の位置を1パスで求め、その周辺を切り出して MediaPipe にかける。
+        // 切り出しの中では顔が必ず大きく写るので、顔の大きさによる検出漏れが起きない。
+        if (yunet) {
+          return yunet.detect(video, { scoreThreshold: Number(getConfig().scoreThreshold) })
+            .then(function (faces) {
+              if (!faces.length) { self.lastSource = null; return null; }
+              faces.sort(function (a, b) { return b.width * b.height - a.width * a.height; });
+              var b = faces[0], m = b.width * 0.6;
+              var rect = new faceapi.Rect(
+                Math.max(0, b.x - m), Math.max(0, b.y - m),
+                Math.min(b.width + 2 * m, w), Math.min(b.height + 2 * m, h));
+              return faceapi.extractFaces(video, [rect]).then(function (crops) {
+                if (!crops.length) return null;
+                var hit = mp.detect(crops[0]);
+                if (!hit) { self.lastSource = null; return null; }
+                hit.cropSource = crops[0];
+                hit.faceCount = faces.length;
+                hit.score = b.score;
+                return finish(video, hit, rect.x, rect.y, "yunet");
+              });
+            });
+        }
+
+        // YuNet が使えない場合：MediaPipe で全体を見て、外したら face-api で位置を探す
+        var hit0 = mp.detect(video);
+        if (hit0) return finish(video, hit0, 0, 0, "mediapipe");
         return legacy.detectBox(video).then(function (d) {
           if (!d) { self.lastSource = null; return null; }
-          var b = d.box, m = b.width * 0.8;
-          var rect = new faceapi.Rect(
-            Math.max(0, b.x - m), Math.max(0, b.y - m),
-            Math.min(b.width + 2 * m, w), Math.min(b.height + 2 * m, h));
-          return faceapi.extractFaces(video, [rect]).then(function (crops) {
+          var b2 = d.box, m2 = b2.width * 0.8;
+          var rect2 = new faceapi.Rect(
+            Math.max(0, b2.x - m2), Math.max(0, b2.y - m2),
+            Math.min(b2.width + 2 * m2, w), Math.min(b2.height + 2 * m2, h));
+          return faceapi.extractFaces(video, [rect2]).then(function (crops) {
             if (!crops.length) return null;
             var hit2 = mp.detect(crops[0]);
             if (!hit2) { self.lastSource = null; return null; }
             hit2.cropSource = crops[0];
-            hit2.cropWidth = crops[0].width;
-            hit2.cropHeight = crops[0].height;
-            return finish(video, hit2, rect.x, rect.y, "mediapipe-crop");
+            return finish(video, hit2, rect2.x, rect2.y, "mediapipe-crop");
           });
         });
       },
@@ -544,6 +574,28 @@
           });
         return start.then(function (m) {
           if (!m) return detectFromImage(img).then(function (d) { return d ? toResult(d, null, "face-api") : null; });
+          var w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+          if (yunet) {
+            return yunet.detect(img, { scoreThreshold: 0.6 }).then(function (faces) {
+              if (!faces.length) {
+                var hitA = m.detectStill ? m.detectStill(img) : null;
+                return hitA ? finish(img, hitA, 0, 0, "mediapipe") : null;
+              }
+              faces.sort(function (a, b) { return b.width * b.height - a.width * a.height; });
+              var b = faces[0], mg = b.width * 0.6;
+              var rect = new faceapi.Rect(
+                Math.max(0, b.x - mg), Math.max(0, b.y - mg),
+                Math.min(b.width + 2 * mg, w), Math.min(b.height + 2 * mg, h));
+              return faceapi.extractFaces(img, [rect]).then(function (crops) {
+                var hit2 = m.detectStill ? m.detectStill(crops[0]) : null;
+                if (!hit2) return null;
+                hit2.cropSource = crops[0];
+                hit2.faceCount = faces.length;
+                hit2.score = b.score;
+                return finish(img, hit2, rect.x, rect.y, "yunet");
+              });
+            });
+          }
           var hit = m.detectStill ? m.detectStill(img) : null;
           if (!hit) return detectFromImage(img).then(function (d) { return d ? toResult(d, null, "face-api") : null; });
           return finish(img, hit, 0, 0, "mediapipe");
@@ -718,32 +770,163 @@
     return c;
   }
 
+  // ONNX Runtime Web は必要になったときだけ読み込む
+  var ortPromise = null;
+  function loadOrt(ortBase) {
+    if (global.ort) return Promise.resolve(global.ort);
+    if (ortPromise) return ortPromise;
+    ortPromise = new Promise(function (resolve, reject) {
+      var s = document.createElement("script");
+      s.src = ortBase + "/ort.wasm.min.js";
+      s.onload = function () {
+        // 相対パスのままだとモジュール指定子として解決できず失敗するため絶対URLにする
+        global.ort.env.wasm.wasmPaths = new URL(ortBase + "/", document.baseURI).href;
+        global.ort.env.wasm.numThreads = 1; // GitHub Pages では COOP/COEP を返せないため
+        resolve(global.ort);
+      };
+      s.onerror = function () { ortPromise = null; reject(new Error("ONNX Runtime を読み込めませんでした")); };
+      document.head.appendChild(s);
+    });
+    return ortPromise;
+  }
+
+  // ------------------------------------------------------------------
+  // YuNet（マルチスケール顔検出器）
+  // ------------------------------------------------------------------
+  /*
+   * OpenCV Zoo の face_detection_yunet（MIT / Shiqi Yu 氏）。227KB。
+   * stride 8/16/32 の3階層を同時に見るため、顔の大きさによらず1回の推論で検出できる。
+   * 入力は 640x640 固定なので、縦横比を保ったまま余白を足して収める。
+   */
+  var YUNET_SIZE = 640;
+  var YUNET_STRIDES = [8, 16, 32];
+
+  function createYuNet(opts) {
+    opts = opts || {};
+    var base = opts.baseUri || "vendor/yunet";
+    var ortBase = opts.ortUri || "vendor/onnxruntime";
+    var session = null, inputName = null, canvas = null, ctx = null;
+
+    function nms(boxes, iouThreshold) {
+      boxes.sort(function (a, b) { return b.score - a.score; });
+      var keep = [];
+      for (var i = 0; i < boxes.length; i++) {
+        var ok = true;
+        for (var j = 0; j < keep.length; j++) {
+          var a = boxes[i], b = keep[j];
+          var x1 = Math.max(a.x, b.x), y1 = Math.max(a.y, b.y);
+          var x2 = Math.min(a.x + a.width, b.x + b.width), y2 = Math.min(a.y + a.height, b.y + b.height);
+          var inter = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
+          var iou = inter / (a.width * a.height + b.width * b.height - inter);
+          if (iou > iouThreshold) { ok = false; break; }
+        }
+        if (ok) keep.push(boxes[i]);
+      }
+      return keep;
+    }
+
+    return {
+      get ready() { return !!session; },
+      init: function () {
+        if (session) return Promise.resolve(true);
+        return loadOrt(ortBase).then(function (ort) {
+          return ort.InferenceSession.create(base + "/face_detection_yunet_2023mar.onnx", {
+            executionProviders: ["wasm"], graphOptimizationLevel: "all"
+          });
+        }).then(function (s) {
+          session = s;
+          inputName = s.inputNames[0];
+          return true;
+        }).catch(function (e) {
+          console.warn("YuNet を初期化できませんでした", e);
+          session = null;
+          return false;
+        });
+      },
+
+      /* 画像・映像から顔をすべて検出する。座標は入力画像のピクセル単位で返す */
+      detect: function (input, options) {
+        if (!session) return Promise.resolve([]);
+        options = options || {};
+        var scoreThreshold = options.scoreThreshold == null ? 0.7 : options.scoreThreshold;
+        var w = input.videoWidth || input.naturalWidth || input.width;
+        var h = input.videoHeight || input.naturalHeight || input.height;
+        if (!w || !h) return Promise.resolve([]);
+
+        if (!canvas) {
+          canvas = document.createElement("canvas");
+          canvas.width = YUNET_SIZE; canvas.height = YUNET_SIZE;
+          ctx = canvas.getContext("2d", { willReadFrequently: true });
+        }
+        // 縦横比を保ったまま 640x640 に収める（余白は黒）
+        var scale = Math.min(YUNET_SIZE / w, YUNET_SIZE / h);
+        ctx.fillStyle = "#000";
+        ctx.fillRect(0, 0, YUNET_SIZE, YUNET_SIZE);
+        ctx.drawImage(input, 0, 0, Math.round(w * scale), Math.round(h * scale));
+
+        var px = ctx.getImageData(0, 0, YUNET_SIZE, YUNET_SIZE).data;
+        var n = YUNET_SIZE * YUNET_SIZE;
+        var data = new Float32Array(3 * n);
+        // YuNet は正規化なしの BGR を受け取る
+        for (var i = 0; i < n; i++) {
+          data[i] = px[i * 4 + 2];
+          data[n + i] = px[i * 4 + 1];
+          data[2 * n + i] = px[i * 4];
+        }
+        var ort = global.ort;
+        var feeds = {};
+        feeds[inputName] = new ort.Tensor("float32", data, [1, 3, YUNET_SIZE, YUNET_SIZE]);
+        return session.run(feeds).then(function (out) {
+          var boxes = [];
+          YUNET_STRIDES.forEach(function (s) {
+            var cls = out["cls_" + s].data, obj = out["obj_" + s].data;
+            var bbox = out["bbox_" + s].data, kps = out["kps_" + s].data;
+            var cols = YUNET_SIZE / s, cells = cols * cols;
+            for (var i = 0; i < cells; i++) {
+              var c1 = Math.min(1, Math.max(0, cls[i]));
+              var o1 = Math.min(1, Math.max(0, obj[i]));
+              var score = Math.sqrt(c1 * o1);
+              if (score < scoreThreshold) continue;
+              var col = i % cols, row = (i / cols) | 0;
+              var cx = (col + bbox[i * 4]) * s;
+              var cy = (row + bbox[i * 4 + 1]) * s;
+              var bw = Math.exp(bbox[i * 4 + 2]) * s;
+              var bh = Math.exp(bbox[i * 4 + 3]) * s;
+              var pts = [];
+              for (var l = 0; l < 5; l++) {
+                pts.push({
+                  x: ((kps[i * 10 + 2 * l] + col) * s) / scale,
+                  y: ((kps[i * 10 + 2 * l + 1] + row) * s) / scale
+                });
+              }
+              boxes.push({
+                x: (cx - bw / 2) / scale, y: (cy - bh / 2) / scale,
+                width: bw / scale, height: bh / scale,
+                score: score, landmarks: pts
+              });
+            }
+          });
+          return nms(boxes, options.nmsThreshold == null ? 0.3 : options.nmsThreshold);
+        }).catch(function (e) {
+          console.warn("YuNet の推論に失敗", e);
+          return [];
+        });
+      }
+    };
+  }
+
   function createJapaneseFace(opts) {
     opts = opts || {};
     var base = opts.baseUri || "vendor/japanese-face";
     var ortBase = opts.ortUri || "vendor/onnxruntime";
     var session = null, inputName = null, chipCanvas = null;
 
-    function loadOrt() {
-      if (global.ort) return Promise.resolve(global.ort);
-      return new Promise(function (resolve, reject) {
-        var s = document.createElement("script");
-        s.src = ortBase + "/ort.wasm.min.js";
-        s.onload = function () { resolve(global.ort); };
-        s.onerror = function () { reject(new Error("ONNX Runtime を読み込めませんでした")); };
-        document.head.appendChild(s);
-      });
-    }
-
     return {
       get ready() { return !!session; },
       /* 初回の呼び出しでランタイムとモデル（約40MB）を取得する */
       init: function () {
         if (session) return Promise.resolve(true);
-        return loadOrt().then(function (ort) {
-          // 相対パスのままだとモジュール指定子として解決できずに失敗するため、絶対URLにする
-          ort.env.wasm.wasmPaths = new URL(ortBase + "/", document.baseURI).href;
-          ort.env.wasm.numThreads = 1; // GitHub Pages では COOP/COEP を返せないため
+        return loadOrt(ortBase).then(function (ort) {
           return ort.InferenceSession.create(base + "/JAPANESE_FACE_V1.onnx", {
             executionProviders: ["wasm"], graphOptimizationLevel: "all"
           });
@@ -846,6 +1029,7 @@
   }
 
   global.FaceEngine = {
+    createYuNet: createYuNet,
     matchPeople: matchPeople,
     createJapaneseFace: createJapaneseFace,
     cosineSimilarity: cosineSimilarity,

@@ -54,7 +54,8 @@ https の一時URLを発行して、そのURLを iPad で開きます。
 
 | 段階 | 使用モデル | 内容 |
 | --- | --- | --- |
-| 顔検出・ランドマーク | MediaPipe Face Landmarker | 顔の位置と478点のランドマーク、表情スコアを一度に取得 |
+| 顔検出 | YuNet（227KB・MIT） | stride 8/16/32 を同時に見るマルチスケール検出器。顔の大きさによらず1パスで検出 |
+| ランドマーク | MediaPipe Face Landmarker | 検出した顔の周辺を切り出し、478点のランドマークと表情スコアを取得 |
 | 位置合わせ | （計算のみ） | 両目と口の重心から顔を切り出す（dlib方式） |
 | 特徴量抽出 | 顔認識モデル（ResNet系・TensorFlow.js） | 顔を 128 次元ベクトルに変換 |
 | 照合 | ユークリッド距離 | 登録済みベクトルとの距離が小さいほど同一人物 |
@@ -87,13 +88,29 @@ MediaPipe に替えると切り出しが安定し、実測で次のようにな�
 
 本人と他人の差が約3倍から約9倍に広がっています。
 
-### 遠い顔の扱い（二段構え）
+### 検出は YuNet に置き換えました
 
-MediaPipe の顔検出は近〜中距離向けで、フレーム幅の12%以下しかない小さな顔は苦手です。
-そのため、MediaPipe が顔を見つけられなかったフレームでは、従来の TinyFaceDetector で顔の位置だけを探し、
-その周辺を切り出してもう一度 MediaPipe にかけます。これで12%の顔まで拾えます。
+MediaPipe の顔検出（BlazeFace）は近〜中距離向けの固定レンジ検出器で、小さな顔を落とします。
+そこで検出だけを **YuNet**（OpenCV Zoo / Shiqi Yu 氏・MIT・227KB）に置き換えました。
+YuNet は stride 8/16/32 の3階層を同時に見るマルチスケール検出器なので、1パスで全ての大きさの顔を拾えます。
 
-設定の「検出解像度」は、この予備経路と、MediaPipe が読み込めない環境での従来経路で使われます。
+検出した顔の周辺を切り出してから MediaPipe にかけるため、MediaPipe は常に「顔が大きく写った画像」を見ることになり、
+その得意領域から外れません。
+
+実測（フレーム幅に対する顔の比率ごと）：
+
+| 顔の大きさ | 旧（解像度巡回の最良スコア） | MediaPipe単独 | YuNet→切出→MediaPipe |
+| --- | --- | --- | --- |
+| 70% | 87 | 検出 | 検出(89) |
+| 60% | 78 | 検出 | 検出(91) |
+| 45% | 86 | 検出 | 検出(91) |
+| 30% | 77 | 検出 | 検出(90) |
+| 20% | 73 | 検出 | 検出(90) |
+| 12% | 69 | — | 検出(87) |
+| 8% | — | — | 検出(69) |
+
+設定の「検出スコアの下限」は YuNet のしきい値です（低いほど遠くの顔まで拾います）。
+「検出解像度」は、YuNet も MediaPipe も使えない環境の予備経路でのみ使われます。
 
 ### 認識モデルの切り替え（JAPANESE FACE V1）
 
@@ -177,7 +194,8 @@ vendor/mediapipe/         @mediapipe/tasks-vision 1.0.1（Apache-2.0）
   vision_bundle.mjs       ライブラリ本体
   wasm/                   WebAssembly ランタイム（約12MB）
   face_landmarker.task    学習済みモデル（約3.7MB）
-vendor/onnxruntime/       ONNX Runtime Web 1.27.0（MIT）※JAPANESE FACE V1 選択時のみ読み込み
+vendor/yunet/             YuNet 顔検出モデル（MIT・227KB）
+vendor/onnxruntime/       ONNX Runtime Web 1.27.0（MIT）※YuNet と JAPANESE FACE V1 が使用
 vendor/japanese-face/     JAPANESE_FACE_V1.onnx（約26MB）+ ライセンス
 ```
 

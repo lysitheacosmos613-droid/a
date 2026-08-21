@@ -414,7 +414,7 @@
             </div>
             <div class="setting">
               <div class="lb">検出解像度
-                <small>MediaPipe が使えない環境や、遠くの顔を探す予備経路で使います。自動のままを推奨します</small>
+                <small>YuNet も MediaPipe も使えない環境の予備経路で使います。自動のままを推奨します</small>
               </div>
               <select id="setInputSize" class="btn sm">
                 <option value="auto">自動（推奨）</option>
@@ -426,7 +426,7 @@
             </div>
             <div class="setting">
               <div class="lb">検出スコアの下限
-                <small>低いと顔でないものを拾いやすくなります</small>
+                <small>YuNet（顔検出）の下限。低いほど遠くの顔まで拾いますが、顔でないものも拾いやすくなります</small>
               </div>
               <input type="range" id="setScore" min="0.20" max="0.80" step="0.05" />
               <span class="val mono num" id="valScore"></span>
@@ -438,10 +438,13 @@
           <div class="card">
             <h2>この仕組みについて</h2>
             <div class="note">
-              <b>処理はすべて端末内</b>：MediaPipe Face Landmarker が顔と478点のランドマークを検出し、
+              <b>処理はすべて端末内</b>：YuNet が顔の位置を検出し、その周辺を切り出して
+              MediaPipe Face Landmarker が478点のランドマークを求め、
               両目と口の位置から顔を切り出したうえで、顔認識モデル（TensorFlow.js）が 128 次元の特徴量を出力します。
               照合はこの特徴量同士のユークリッド距離で行い、顔画像そのものをサーバーに送ることはありません。
-              MediaPipe が使えない環境では、従来の TinyFaceDetector + 68点ランドマークの経路に自動で切り替わります。<br /><br />
+              YuNet は stride 8/16/32 の3階層を同時に見るマルチスケール検出器なので、
+              顔の大きさによる検出漏れが起きません。これらが使えない環境では、
+              従来の TinyFaceDetector + 68点ランドマークの経路に自動で切り替わります。<br /><br />
               <b>限界</b>：照明・角度・マスク・経年で精度は下がります。双子や近親者は誤認することがあります。
               印刷写真や画面表示を使ったなりすましは、まばたき検知だけでは完全には防げません。
               入退室管理など重要な用途では、暗証番号やカードとの併用（多要素）を前提にしてください。<br /><br />
@@ -815,7 +818,7 @@
               { text: det.source === "face-api"
                   ? "検出 " + Math.round(det.detection.score * 100) + "%" +
                     (reader.activeSize ? " / " + reader.activeSize + "px" : "")
-                  : "検出 " + (det.source === "mediapipe-crop" ? "遠距離" : "正常") },
+                  : "検出 " + (det.source === "yunet" ? "YuNet" : det.source === "mediapipe-crop" ? "遠距離" : "正常") },
               blink.ok()
                 ? { text: "生体検知 OK", cls: "live-ok" }
                 : { text: "まばたきしてください", cls: "live-wait" }

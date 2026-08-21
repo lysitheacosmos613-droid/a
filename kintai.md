@@ -163,10 +163,11 @@ face-auth.html       顔認証の単体デモ（しきい値の挙動を確か�
 face-engine.js       顔検出・照合の共通処理（両方から読み込む）
 vendor/mediapipe/    @mediapipe/tasks-vision 1.0.1（Apache-2.0）と顔ランドマークモデル
 vendor/face-api/     @vladmandic/face-api 1.7.15（MIT）と顔認識モデル
-vendor/onnxruntime/  ONNX Runtime Web 1.27.0（MIT）※JAPANESE FACE V1 選択時のみ
+vendor/yunet/        YuNet 顔検出モデル（MIT・227KB）
+vendor/onnxruntime/  ONNX Runtime Web 1.27.0（MIT）
 vendor/japanese-face/ JAPANESE_FACE_V1.onnx（yKesamaru氏 / 東海顔認証）とライセンス
 ```
 
-顔の検出とランドマークは MediaPipe、特徴量の抽出は face-api の認識モデルという構成です。
+顔の検出は YuNet、ランドマークは MediaPipe、特徴量の抽出は face-api の認識モデル（または JAPANESE FACE V1）という構成です。
 詳しい経緯と実測値は `face-auth.md` の「仕組み」を参照してください。
 初回の読み込みは合計20MBほどになります（2回目以降はキャッシュされます）。

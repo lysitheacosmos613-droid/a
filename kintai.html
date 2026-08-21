@@ -452,7 +452,7 @@
                   <span class="val mono num" id="valDup"></span>
                 </div>
                 <div class="setting">
-                  <div class="lb">検出解像度<small>MediaPipeが使えない環境や、遠くの顔を探すときの予備経路で使います</small></div>
+                  <div class="lb">検出解像度<small>YuNetもMediaPipeも使えない環境の予備経路で使います</small></div>
                   <select id="setInputSize" class="btn sm">
                     <option value="auto">自動（推奨）</option>
                     <option value="224">224</option>
@@ -852,7 +852,7 @@
           setBadges([det.source === "face-api"
             ? "検出 " + Math.round(det.detection.score * 100) + "%" +
               (reader.activeSize ? " / " + reader.activeSize + "px" : "")
-            : "検出 " + (det.source === "mediapipe-crop" ? "遠距離" : "正常") +
+            : "検出 " + (det.source === "yunet" ? "YuNet" : det.source === "mediapipe-crop" ? "遠距離" : "正常") +
               (det.blink != null ? " / まばたき " + det.blink.toFixed(2) : "")]);
           if (mode === "punch") handlePunchFrame(det, view);
           else handleEnrollFrame(det, view);

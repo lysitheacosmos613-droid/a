@@ -447,11 +447,13 @@
       <div class="note">
         顔検出・認識モデル：<span class="mono">@vladmandic/face-api 1.7.15</span>（MIT）を同梱。
         <span class="mono">vendor/face-api/</span> にライブラリと重みがあります。
+        出退勤の記録に使う場合は <a href="kintai.html" style="color:var(--blue)">kintai.html</a>（勤怠システム）へ。
       </div>
     </footer>
   </div>
 
   <script src="vendor/face-api/face-api.js"></script>
+  <script src="face-engine.js"></script>
   <script>
   (function () {
     "use strict";
@@ -475,11 +477,7 @@
       mirror: true
     };
 
-    // TinyFaceDetector は inputSize によって得意な顔の大きさが変わる。
-    // 小さい値ほど「大きく写った顔」、大きい値ほど「小さく写った顔」に強いので、
-    // 自動モードでは直近に成功したサイズを軸に候補を巡回させる。
-    var SIZE_LADDER = [224, 320, 416, 160, 512];
-    var IMAGE_SIZES = [224, 320, 416, 512, 160];
+    var FE = window.FaceEngine;  // 検出・照合の共通処理（face-engine.js）
 
     var SHOT_GUIDE = [
       "正面をまっすぐ見てください",
@@ -551,12 +549,11 @@
     var lastLoggedId = null;
     var lastLoggedAt = 0;
 
-    var liveness = { eyesClosed: false, lastBlinkAt: 0, blinks: 0 };
+    var blink = FE.createBlinkDetector({ windowMs: LIVENESS_WINDOW_MS, closedBelow: EAR_CLOSED, openAbove: EAR_OPEN });
 
     var enroll = { shots: [], busy: false, autoTimer: null };
 
-    var sizeIdx = 1;        // SIZE_LADDER 内の現在位置（自動モード用）
-    var activeSize = null;  // 直近で検出に成功したサイズ
+    var detector = FE.createDetector(function () { return config; });
 
     var video = $("cam");
     var overlay = $("overlay");
@@ -570,28 +567,18 @@
       $("statusPill").className = "pill" + (cls ? " " + cls : "");
     }
 
-    function loadFrom(uri) {
-      return Promise.all([
-        faceapi.nets.tinyFaceDetector.loadFromUri(uri),
-        faceapi.nets.faceLandmark68Net.loadFromUri(uri),
-        faceapi.nets.faceRecognitionNet.loadFromUri(uri)
-      ]);
-    }
-
     function boot() {
       setStatus("モデル読み込み中…", "is-load");
-      // ローカル同梱 → 失敗したら CDN（file:// で開いた場合の保険）
-      loadFrom(LOCAL_MODEL_URI)
-        .catch(function (e) {
-          console.warn("ローカルのモデル読み込みに失敗、CDNを試します", e);
-          setStatus("モデルをCDNから取得中…", "is-load");
-          return loadFrom(CDN_MODEL_URI);
-        })
-        .then(function () {
+      FE.loadModels({
+        localUri: LOCAL_MODEL_URI,
+        cdnUri: CDN_MODEL_URI,
+        onProgress: function (step) {
+          if (step === "cdn") setStatus("モデルをCDNから取得中…", "is-load");
+        }
+      })
+        .then(function (backend) {
           modelsReady = true;
           setStatus("準備完了", "is-ok");
-          var backend = "—";
-          try { backend = faceapi.tf.getBackend() || "—"; } catch (e) {}
           $("backendText").textContent = "backend " + backend;
           $("stageMsg").textContent = "「カメラを開始」を押してください";
           $("camToggle").disabled = false;
@@ -652,7 +639,7 @@
         $("camToggle").classList.remove("primary");
         $("camToggle").disabled = false;
         running = true;
-        liveness.lastBlinkAt = 0;
+        blink.reset();
         listCameras();
         requestAnimationFrame(loop);
         refreshEnrollUI();
@@ -687,72 +674,15 @@
     // ------------------------------------------------------------------
     // 特徴量の照合
     // ------------------------------------------------------------------
-    function distance(a, b) {
-      var s = 0;
-      for (var i = 0; i < a.length; i++) { var d = a[i] - b[i]; s += d * d; }
-      return Math.sqrt(s);
-    }
-
-    // 登録者全員と比較し、最も近い人を返す（各サンプルの最小距離を採用）
     function identify(descriptor) {
-      var best = { person: null, dist: Infinity };
-      for (var i = 0; i < people.length; i++) {
-        var p = people[i];
-        var list = p.descriptors && p.descriptors.length ? p.descriptors : [p.descriptor];
-        var min = Infinity;
-        for (var j = 0; j < list.length; j++) {
-          var d = distance(descriptor, list[j]);
-          if (d < min) min = d;
-        }
-        if (min < best.dist) best = { person: p, dist: min };
-      }
-      return best;
-    }
-
-    // ------------------------------------------------------------------
-    // まばたき（簡易ライブネス）
-    // ------------------------------------------------------------------
-    function eyeAspectRatio(pts) {
-      var v1 = Math.hypot(pts[1].x - pts[5].x, pts[1].y - pts[5].y);
-      var v2 = Math.hypot(pts[2].x - pts[4].x, pts[2].y - pts[4].y);
-      var h = Math.hypot(pts[0].x - pts[3].x, pts[0].y - pts[3].y);
-      return h === 0 ? 0 : (v1 + v2) / (2 * h);
-    }
-
-    function updateLiveness(landmarks) {
-      var ear = (eyeAspectRatio(landmarks.getLeftEye()) + eyeAspectRatio(landmarks.getRightEye())) / 2;
-      if (!liveness.eyesClosed && ear < EAR_CLOSED) {
-        liveness.eyesClosed = true;
-      } else if (liveness.eyesClosed && ear > EAR_OPEN) {
-        liveness.eyesClosed = false;
-        liveness.blinks++;
-        liveness.lastBlinkAt = Date.now();
-      }
-      return ear;
-    }
-
-    function livenessOK() {
-      return Date.now() - liveness.lastBlinkAt < LIVENESS_WINDOW_MS;
+      return FE.identify(descriptor, people);
     }
 
     // ------------------------------------------------------------------
     // 描画
     // ------------------------------------------------------------------
     function syncOverlaySize() {
-      var w = video.videoWidth, h = video.videoHeight;
-      if (!w || !h) return null;
-      // video は object-fit: cover なので、表示領域に合わせた切り出しを考慮する
-      var box = video.getBoundingClientRect();
-      if (overlay.width !== Math.round(box.width) || overlay.height !== Math.round(box.height)) {
-        overlay.width = Math.round(box.width);
-        overlay.height = Math.round(box.height);
-      }
-      var scale = Math.max(overlay.width / w, overlay.height / h);
-      return {
-        scale: scale,
-        dx: (overlay.width - w * scale) / 2,
-        dy: (overlay.height - h * scale) / 2
-      };
+      return FE.fitOverlay(video, overlay);
     }
 
     function drawFace(det, view, color, label) {
@@ -814,54 +744,13 @@
     // ------------------------------------------------------------------
     // 推論ループ
     // ------------------------------------------------------------------
-    function tinyOpts(size, score) {
-      return new faceapi.TinyFaceDetectorOptions({
-        inputSize: Number(size),
-        scoreThreshold: Number(score == null ? config.scoreThreshold : score)
-      });
-    }
-
-    // このフレームで試すサイズ（自動モードでは 2 つまで）
-    function nextSizes() {
-      if (config.inputSize !== "auto") return [Number(config.inputSize)];
-      var a = SIZE_LADDER[sizeIdx];
-      var b = SIZE_LADDER[(sizeIdx + 1) % SIZE_LADDER.length];
-      return [a, b];
-    }
-
-    function detectOnce(input, size) {
-      return faceapi
-        .detectSingleFace(input, tinyOpts(size))
-        .withFaceLandmarks()
-        .withFaceDescriptor();
-    }
-
-    // 顔が見つかるまでサイズを変えて試す。見つかったサイズは次フレームで優先する。
-    function detectAdaptive(input) {
-      var sizes = nextSizes();
-      return detectOnce(input, sizes[0]).then(function (d) {
-        if (d) { activeSize = sizes[0]; return d; }
-        if (sizes.length < 2) { activeSize = null; return null; }
-        return detectOnce(input, sizes[1]).then(function (d2) {
-          if (d2) {
-            activeSize = sizes[1];
-            sizeIdx = (sizeIdx + 1) % SIZE_LADDER.length; // 当たったサイズを軸にする
-          } else {
-            activeSize = null;
-            sizeIdx = (sizeIdx + 1) % SIZE_LADDER.length; // 次フレームは別の組み合わせ
-          }
-          return d2;
-        });
-      });
-    }
-
     var lastResult = null; // 直近の検出（登録用に使う）
 
     function loop() {
       if (!running) return;
       if (!video.videoWidth) { requestAnimationFrame(loop); return; }
 
-      detectAdaptive(video)
+      detector.detect(video)
         .then(function (det) {
           var t = performance.now();
           if (lastFrameTs) {
@@ -879,11 +768,11 @@
             setBadges([{ text: "顔を検出中…" }]);
             handleNoFace();
           } else {
-            var ear = updateLiveness(det.landmarks);
+            var ear = blink.update(det.landmarks);
             var badges = [
               { text: "検出 " + Math.round(det.detection.score * 100) + "%" +
-                      (activeSize ? " / " + activeSize + "px" : "") },
-              livenessOK()
+                      (detector.activeSize ? " / " + detector.activeSize + "px" : "") },
+              blink.ok()
                 ? { text: "生体検知 OK", cls: "live-ok" }
                 : { text: "まばたきしてください", cls: "live-wait" }
             ];
@@ -919,7 +808,7 @@
       else matchStreak = { id: key, count: 1 };
 
       var needLive = config.liveness;
-      var liveOK = livenessOK();
+      var liveOK = blink.ok();
       var confirmed = matchStreak.count >= config.streak;
 
       var color = isMatch ? "#1f8a5b" : "#d83a3a";
@@ -1030,17 +919,7 @@
     }
 
     function faceThumb(det, size) {
-      size = size || 128;
-      var b = det.detection.box;
-      var m = b.width * 0.28;
-      var sx = clamp(b.x - m, 0, video.videoWidth);
-      var sy = clamp(b.y - m * 1.2, 0, video.videoHeight);
-      var sw = clamp(b.width + m * 2, 1, video.videoWidth - sx);
-      var sh = clamp(b.height + m * 2.2, 1, video.videoHeight - sy);
-      var c = document.createElement("canvas");
-      c.width = size; c.height = size;
-      c.getContext("2d").drawImage(video, sx, sy, sw, sh, 0, 0, size, size);
-      return c.toDataURL("image/jpeg", 0.72);
+      return FE.cropFace(video, det.detection.box, size || 128);
     }
 
     function canShoot() {
@@ -1119,12 +998,7 @@
     }
 
     function meanDescriptor(list) {
-      var out = new Array(list[0].length).fill(0);
-      list.forEach(function (d) {
-        for (var i = 0; i < d.length; i++) out[i] += d[i];
-      });
-      for (var i = 0; i < out.length; i++) out[i] = out[i] / list.length;
-      return out;
+      return FE.meanDescriptor(list);
     }
 
     function savePerson() {
@@ -1172,53 +1046,12 @@
       });
     }
 
-    // 静止画は総当たりで一番よく写るサイズを選ぶ（顔の大きさが事前に分からないため）
     function detectFromImage(img) {
-      var best = { size: null, faces: 0, score: 0 };
-      var chain = Promise.resolve();
-      IMAGE_SIZES.forEach(function (size) {
-        chain = chain.then(function () {
-          return faceapi.detectAllFaces(img, tinyOpts(size, 0.4)).then(function (dets) {
-            if (!dets.length) return;
-            var top = dets.reduce(function (m, d) { return d.score > m ? d.score : m; }, 0);
-            if (dets.length > best.faces || (dets.length === best.faces && top > best.score)) {
-              best = { size: size, faces: dets.length, score: top };
-            }
-          });
-        });
-      });
-      return chain.then(function () {
-        if (!best.size) return null;
-        return faceapi
-          .detectAllFaces(img, tinyOpts(best.size, 0.4))
-          .withFaceLandmarks()
-          .withFaceDescriptors()
-          .then(function (results) {
-            if (!results.length) return null;
-            // 一番大きく写っている顔を対象にする
-            results.sort(function (a, b) {
-              return b.detection.box.width * b.detection.box.height -
-                     a.detection.box.width * a.detection.box.height;
-            });
-            var r = results[0];
-            r.faceCount = results.length;
-            r.usedSize = best.size;
-            return r;
-          });
-      });
+      return FE.detectFromImage(img);
     }
 
     function imageThumb(img, box, size) {
-      size = size || 160;
-      var m = box.width * 0.28;
-      var sx = clamp(box.x - m, 0, img.width);
-      var sy = clamp(box.y - m * 1.2, 0, img.height);
-      var sw = clamp(box.width + m * 2, 1, img.width - sx);
-      var sh = clamp(box.height + m * 2.2, 1, img.height - sy);
-      var c = document.createElement("canvas");
-      c.width = size; c.height = size;
-      c.getContext("2d").drawImage(img, sx, sy, sw, sh, 0, 0, size, size);
-      return c.toDataURL("image/jpeg", 0.72);
+      return FE.cropFace(img, box, size || 160);
     }
 
     function identifyFromFile(file) {

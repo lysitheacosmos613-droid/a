@@ -1,0 +1,1917 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>勤怠システム — 顔認証で打刻</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&family=Inter:wght@400;500;600;700&display=swap"
+    rel="stylesheet"
+  />
+  <style>
+    :root {
+      --bg: #ffffff;
+      --bg-2: #fafafa;
+      --bg-3: #f4f4f4;
+      --ink: #0a0a0a;
+      --ink-2: #1a1a1a;
+      --mute: #767676;
+      --mute-2: #a8a8a8;
+      --line: #eaeaea;
+      --line-soft: #f0f0f0;
+      --blue: #0047ff;
+      --blue-ink: #0036c5;
+      --blue-soft: #ecf0ff;
+      --danger: #d83a3a;
+      --danger-soft: #fdeeee;
+      --ok: #1f8a5b;
+      --ok-soft: #e9f6ef;
+      --warn: #b07b00;
+      --warn-soft: #fdf4e0;
+      --radius: 10px;
+      --shadow-sm: 0 1px 0 rgba(10, 10, 10, 0.04);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    /* display を指定した要素でも hidden 属性を効かせる */
+    [hidden] { display: none !important; }
+    html, body {
+      min-height: 100%;
+      background: var(--bg-2);
+      color: var(--ink);
+      font-family: "Noto Sans JP", "Inter", system-ui, sans-serif;
+      font-feature-settings: "palt";
+      -webkit-font-smoothing: antialiased;
+      letter-spacing: 0.01em;
+      -webkit-text-size-adjust: 100%;
+    }
+    button { font: inherit; color: inherit; background: none; border: none; cursor: pointer; letter-spacing: inherit; }
+    input, select, textarea { font: inherit; color: inherit; letter-spacing: inherit; }
+    .mono { font-family: "DM Mono", "Inter", monospace; letter-spacing: 0.04em; }
+    .num { font-variant-numeric: tabular-nums; }
+    .wrap { max-width: 1120px; margin: 0 auto; padding: 20px 18px 64px; }
+
+    header.top { display: flex; align-items: center; gap: 14px; padding-bottom: 16px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+    .brand h1 { font-size: 18px; font-weight: 600; letter-spacing: 0.02em; }
+    .brand .sub { font-size: 10.5px; color: var(--mute-2); text-transform: uppercase; letter-spacing: 0.1em; }
+    .spacer { flex: 1 1 auto; }
+    .clock { font-size: 26px; font-weight: 500; letter-spacing: 0.02em; }
+    .clock .date { font-size: 11.5px; color: var(--mute); display: block; text-align: right; letter-spacing: 0.06em; }
+    .pill { display: inline-flex; align-items: center; gap: 7px; padding: 6px 11px; border-radius: 999px; font-size: 11.5px;
+      background: var(--bg-3); color: var(--mute); border: 1px solid var(--line); white-space: nowrap; }
+    .pill .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--mute-2); }
+    .pill.is-ok { background: var(--ok-soft); color: var(--ok); border-color: transparent; }
+    .pill.is-ok .dot { background: var(--ok); }
+    .pill.is-load { background: var(--blue-soft); color: var(--blue-ink); border-color: transparent; }
+    .pill.is-load .dot { background: var(--blue); animation: blink 1s steps(2, start) infinite; }
+    .pill.is-err { background: var(--danger-soft); color: var(--danger); border-color: transparent; }
+    .pill.is-err .dot { background: var(--danger); }
+    @keyframes blink { to { opacity: 0.25; } }
+
+    nav.tabs { display: flex; gap: 4px; margin: 16px 0 20px; flex-wrap: wrap; }
+    nav.tabs button { padding: 9px 16px; border-radius: 999px; font-size: 13.5px; color: var(--mute); }
+    nav.tabs button:hover { color: var(--ink); background: var(--bg-3); }
+    nav.tabs button[aria-selected="true"] { background: var(--ink); color: #fff; }
+
+    .panel[hidden] { display: none; }
+    .cols { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+    @media (max-width: 900px) { .cols { grid-template-columns: minmax(0, 1fr); } }
+
+    .card { background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow-sm); padding: 16px; }
+    .card + .card { margin-top: 14px; }
+    .card h2 { font-size: 13px; font-weight: 600; margin-bottom: 12px; letter-spacing: 0.03em; }
+    .card h2 .hint { font-weight: 400; color: var(--mute-2); font-size: 11px; margin-left: 8px; }
+
+    /* ---- カメラ ---- */
+    .stage-inner { position: relative; width: 100%; aspect-ratio: 4 / 3; background: #0a0a0a;
+      border-radius: var(--radius); overflow: hidden; max-width: calc(58vh * 4 / 3); margin: 0 auto; }
+    .stage-inner video, .stage-inner canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+    .stage-inner.mirror video, .stage-inner.mirror canvas { transform: scaleX(-1); }
+    .stage-msg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #fff;
+      font-size: 13px; text-align: center; padding: 24px; line-height: 1.8; background: rgba(10, 10, 10, 0.72); z-index: 3; }
+    .stage-msg[hidden] { display: none; }
+    .stage-badge { position: absolute; left: 10px; top: 10px; z-index: 2; display: flex; gap: 6px; flex-wrap: wrap; }
+    .badge { font-size: 10.5px; padding: 4px 9px; border-radius: 999px; background: rgba(255, 255, 255, 0.9); color: var(--ink-2); }
+    .stage-bar { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; align-items: center; }
+
+    .btn { padding: 10px 18px; border-radius: 8px; font-size: 13.5px; font-weight: 500; background: var(--bg-3);
+      color: var(--ink-2); border: 1px solid var(--line); transition: background 0.12s ease; }
+    .btn:hover:not(:disabled) { background: var(--line-soft); }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn.primary { background: var(--blue); color: #fff; border-color: transparent; }
+    .btn.primary:hover:not(:disabled) { background: var(--blue-ink); }
+    .btn.ok { background: var(--ok); color: #fff; border-color: transparent; }
+    .btn.danger { background: var(--danger-soft); color: var(--danger); border-color: transparent; }
+    .btn.ghost { background: transparent; }
+    .btn.sm { padding: 6px 11px; font-size: 11.5px; }
+    .btn.big { padding: 20px 24px; font-size: 20px; font-weight: 600; border-radius: 12px; flex: 1 1 200px; }
+
+    /* ---- 打刻パネル ---- */
+    .punch { display: flex; flex-direction: column; gap: 14px; }
+    .who-box { display: flex; align-items: center; gap: 14px; padding: 16px; border-radius: var(--radius); background: var(--bg-3); min-height: 96px; }
+    .who-box.ok { background: var(--ok-soft); }
+    .who-box.ng { background: var(--danger-soft); }
+    .who-box.pending { background: var(--blue-soft); }
+    .who-box img.avatar, .who-box div.avatar { width: 64px; height: 64px; border-radius: 10px; object-fit: cover; background: var(--line); flex: 0 0 auto; }
+    .who-name { font-size: 24px; font-weight: 600; line-height: 1.25; }
+    .who-meta { font-size: 12px; color: var(--mute); margin-top: 5px; line-height: 1.6; }
+    .who-box.ok .who-meta { color: var(--ok); }
+    .who-box.ng .who-meta { color: var(--danger); }
+    .punch-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+    .done-banner { padding: 22px; border-radius: var(--radius); background: var(--ok); color: #fff; text-align: center; }
+    .done-banner .t { font-size: 28px; font-weight: 600; }
+    .done-banner .s { font-size: 13px; opacity: 0.9; margin-top: 6px; }
+
+    /* ---- リスト ---- */
+    table.grid { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+    table.grid th, table.grid td { padding: 8px 6px; border-bottom: 1px solid var(--line-soft); text-align: left; vertical-align: middle; }
+    table.grid th { font-size: 11px; color: var(--mute); font-weight: 500; white-space: nowrap; }
+    table.grid td.r, table.grid th.r { text-align: right; }
+    .scroll-x { overflow-x: auto; }
+    .tag { font-size: 10.5px; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+    .tag.in { background: var(--ok-soft); color: var(--ok); }
+    .tag.out { background: var(--blue-soft); color: var(--blue-ink); }
+    .tag.manual { background: var(--warn-soft); color: var(--warn); }
+    .tag.working { background: var(--ok); color: #fff; }
+    .tag.off { background: var(--bg-3); color: var(--mute); }
+
+    .roster { list-style: none; display: grid; gap: 8px; }
+    .roster li { display: flex; align-items: center; gap: 12px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; }
+    .roster img { width: 42px; height: 42px; border-radius: 6px; object-fit: cover; background: var(--bg-3); flex: 0 0 auto; }
+    .roster .nm { font-size: 14px; font-weight: 500; }
+    .roster .sm { font-size: 11px; color: var(--mute-2); margin-top: 2px; }
+    .empty { color: var(--mute-2); font-size: 12.5px; padding: 16px 0; text-align: center; }
+
+    label.field { display: block; margin-bottom: 12px; }
+    label.field > span { display: block; font-size: 11.5px; color: var(--mute); margin-bottom: 5px; }
+    input[type="text"], input[type="datetime-local"], input[type="month"], select.wide {
+      width: 100%; padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); outline: none; }
+    input:focus, select:focus { border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-soft); }
+    .check { display: flex; gap: 9px; align-items: flex-start; font-size: 12px; line-height: 1.6; }
+    .check input { margin-top: 3px; flex: 0 0 auto; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .sep { height: 1px; background: var(--line-soft); margin: 14px 0; }
+    .note { font-size: 11.5px; color: var(--mute); line-height: 1.8; }
+    .note b { color: var(--ink-2); font-weight: 500; }
+    .warn-box { background: var(--warn-soft); color: #6b4a00; padding: 11px 13px; border-radius: 8px; font-size: 12px; line-height: 1.7; }
+    .shots { display: flex; gap: 6px; margin: 10px 0; flex-wrap: wrap; }
+    .shot { width: 50px; height: 50px; border-radius: 6px; background: var(--bg-3); border: 1px dashed var(--line);
+      display: flex; align-items: center; justify-content: center; font-size: 11px; color: var(--mute-2); overflow: hidden; }
+    .shot img { width: 100%; height: 100%; object-fit: cover; }
+    .shot.next { border-color: var(--blue); border-style: solid; color: var(--blue); background: var(--blue-soft); }
+    .guide { font-size: 12.5px; background: var(--bg-3); padding: 10px 12px; border-radius: 8px; line-height: 1.6; }
+    .setting { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line-soft); }
+    .setting:last-of-type { border-bottom: none; }
+    .setting .lb { flex: 1 1 auto; font-size: 12.5px; }
+    .setting .lb small { display: block; color: var(--mute-2); font-size: 11px; margin-top: 2px; line-height: 1.5; }
+    .setting input[type="range"] { width: 140px; accent-color: var(--blue); }
+    .setting .val { min-width: 46px; text-align: right; font-size: 12px; color: var(--mute); }
+    .switch { position: relative; width: 38px; height: 22px; flex: 0 0 auto; }
+    .switch input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; z-index: 1; }
+    .switch i { position: absolute; inset: 0; background: var(--line); border-radius: 999px; transition: background 0.15s ease; }
+    .switch i::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px;
+      background: #fff; border-radius: 50%; transition: transform 0.15s ease; }
+    .switch input:checked + i { background: var(--blue); }
+    .switch input:checked + i::after { transform: translateX(16px); }
+    .lock-screen { text-align: center; padding: 40px 20px; }
+    .lock-screen .icon { font-size: 40px; }
+    .lock-screen h3 { font-size: 17px; font-weight: 600; margin: 14px 0 8px; }
+    .subtabs { display: flex; gap: 4px; margin-bottom: 14px; flex-wrap: wrap; }
+    .subtabs button { padding: 6px 12px; border-radius: 8px; font-size: 12px; color: var(--mute); border: 1px solid var(--line); }
+    .subtabs button[aria-selected="true"] { background: var(--ink); color: #fff; border-color: transparent; }
+    footer { margin-top: 26px; padding-top: 14px; border-top: 1px solid var(--line); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="top">
+      <div class="brand">
+        <h1>勤怠システム</h1>
+        <span class="sub mono">Face punch clock</span>
+      </div>
+      <div class="spacer"></div>
+      <span class="pill is-load" id="statusPill"><span class="dot"></span><span id="statusText">モデル読み込み中…</span></span>
+      <div class="clock mono num">
+        <span id="clockTime">--:--:--</span>
+        <span class="date" id="clockDate">—</span>
+      </div>
+    </header>
+
+    <nav class="tabs" role="tablist">
+      <button role="tab" data-tab="punch" aria-selected="true">打刻</button>
+      <button role="tab" data-tab="today" aria-selected="false">本日</button>
+      <button role="tab" data-tab="admin" aria-selected="false">管理</button>
+    </nav>
+
+    <!-- ================= 打刻 ================= -->
+    <section class="panel" id="panel-punch">
+      <div class="cols">
+        <div>
+          <div class="card">
+            <h2>カメラ<span class="hint">顔を向けると自動で照合します</span></h2>
+            <div id="slot-punch"></div>
+          </div>
+        </div>
+        <div>
+          <div class="card">
+            <h2>打刻</h2>
+            <div class="punch">
+              <div class="who-box" id="whoBox">
+                <div class="avatar" id="whoAvatar"></div>
+                <div style="flex:1 1 auto; min-width:0">
+                  <div class="who-name" id="whoName">待機中</div>
+                  <div class="who-meta" id="whoMeta">「カメラを開始」を押してください</div>
+                </div>
+              </div>
+              <div class="punch-actions" id="punchActions" hidden>
+                <button class="btn big ok" id="btnIn">出勤</button>
+                <button class="btn big primary" id="btnOut">退勤</button>
+              </div>
+              <div id="doneBox" hidden></div>
+              <div class="note" id="syncBadge" hidden></div>
+              <div class="note" id="punchHint">登録済みの人だけが打刻できます。まだ誰も登録していない場合は「管理」タブから顔を登録してください。</div>
+            </div>
+          </div>
+          <div class="card">
+            <h2>直近の打刻</h2>
+            <div class="scroll-x">
+              <table class="grid" id="recentTable"><tbody></tbody></table>
+            </div>
+            <div class="empty" id="recentEmpty">まだ打刻はありません</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= 本日 ================= -->
+    <section class="panel" id="panel-today" hidden>
+      <div class="cols">
+        <div>
+          <div class="card">
+            <h2>在席状況<span class="hint" id="todayDateLabel"></span></h2>
+            <ul class="roster" id="rosterList"></ul>
+            <div class="empty" id="rosterEmpty">従業員が登録されていません</div>
+          </div>
+        </div>
+        <div>
+          <div class="card">
+            <h2>本日の打刻</h2>
+            <div class="scroll-x">
+              <table class="grid" id="todayTable">
+                <thead><tr><th>時刻</th><th>氏名</th><th>種別</th><th>方法</th></tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+            <div class="empty" id="todayEmpty">本日の打刻はまだありません</div>
+          </div>
+          <div class="card">
+            <h2>本日の勤務時間</h2>
+            <div class="scroll-x">
+              <table class="grid" id="todaySumTable">
+                <thead><tr><th>氏名</th><th>出勤</th><th>退勤</th><th class="r">実働</th></tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+            <div class="empty" id="todaySumEmpty">集計対象がありません</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= 管理 ================= -->
+    <section class="panel" id="panel-admin" hidden>
+      <!-- ロック画面 -->
+      <div class="card" id="lockCard" hidden>
+        <div class="lock-screen">
+          <div class="icon">🔒</div>
+          <h3>管理画面はロックされています</h3>
+          <p class="note" id="lockNote">パスキー（Face ID / Touch ID / パスコード）で解錠してください。</p>
+          <div class="row" style="justify-content:center; margin-top:16px">
+            <button class="btn primary" id="unlockBtn">パスキーで解錠</button>
+          </div>
+          <p class="note" id="lockError" style="color:var(--danger); margin-top:12px"></p>
+        </div>
+      </div>
+
+      <div id="adminBody">
+        <div class="subtabs" role="tablist">
+          <button role="tab" data-sub="emp" aria-selected="true">従業員</button>
+          <button role="tab" data-sub="records" aria-selected="false">打刻の修正</button>
+          <button role="tab" data-sub="report" aria-selected="false">月次集計・CSV</button>
+          <button role="tab" data-sub="settings" aria-selected="false">設定</button>
+        </div>
+
+        <!-- 従業員 -->
+        <section class="subpanel" id="sub-emp">
+          <div class="cols">
+            <div>
+              <div class="card">
+                <h2>顔を登録<span class="hint">カメラで5枚撮影</span></h2>
+                <div id="slot-enroll"></div>
+                <div class="sep"></div>
+                <label class="field">
+                  <span>氏名</span>
+                  <input type="text" id="empName" placeholder="例：山田 太郎" autocomplete="off" />
+                </label>
+                <label class="check" style="margin-bottom:12px">
+                  <input type="checkbox" id="empConsent" />
+                  <span>本人の同意を得て顔情報を登録します。顔画像と特徴量はこの端末内にのみ保存され、外部には送信されません。</span>
+                </label>
+                <div class="guide" id="enrollGuide">カメラを開始し、氏名と同意を入力すると撮影できます。</div>
+                <div class="shots" id="shots"></div>
+                <div class="row">
+                  <button class="btn primary" id="shotBtn" disabled>撮影する</button>
+                  <button class="btn ghost" id="resetShotBtn" disabled>やり直す</button>
+                  <span class="spacer"></span>
+                  <button class="btn ok" id="saveEmpBtn" disabled>登録する</button>
+                </div>
+                <div class="sep"></div>
+                <div class="row">
+                  <input type="file" id="empFile" accept="image/*" hidden />
+                  <button class="btn sm" id="empFileBtn">画像1枚から登録</button>
+                  <button class="btn sm ghost" id="importFaceAuthBtn">顔認証システムの登録者を取り込む</button>
+                </div>
+              </div>
+            </div>
+            <div>
+              <div class="card">
+                <h2>従業員一覧<span class="hint" id="empCount"></span></h2>
+                <ul class="roster" id="empList"></ul>
+                <div class="empty" id="empEmpty">まだ登録されていません</div>
+              </div>
+              <div class="card">
+                <h2>顔の追加登録<span class="hint">認識されにくいときに</span></h2>
+                <div class="note">
+                  眼鏡の有無や照明で認識されにくい場合は、その状態のまま同じ人を選んでサンプルを追加すると安定します。
+                </div>
+                <div class="row" style="margin-top:10px">
+                  <select id="addSampleTarget" class="btn sm" style="max-width:200px"></select>
+                  <button class="btn sm" id="addSampleBtn" disabled>今の顔をサンプル追加</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 打刻の修正 -->
+        <section class="subpanel" id="sub-records" hidden>
+          <div class="card">
+            <h2>打刻の追加</h2>
+            <div class="row">
+              <select id="addPunchEmp" class="btn sm" style="max-width:200px"></select>
+              <select id="addPunchType" class="btn sm">
+                <option value="in">出勤</option>
+                <option value="out">退勤</option>
+              </select>
+              <input type="datetime-local" id="addPunchAt" style="max-width:230px" />
+              <button class="btn primary sm" id="addPunchBtn">追加する</button>
+            </div>
+            <div class="note" style="margin-top:10px">手で追加・修正した打刻は「手修正」として記録に残ります。</div>
+          </div>
+          <div class="card">
+            <h2>打刻一覧<span class="hint">日付で絞り込み</span></h2>
+            <div class="row" style="margin-bottom:12px">
+              <input type="month" id="recMonth" style="max-width:180px" />
+              <select id="recEmp" class="btn sm" style="max-width:200px"></select>
+              <span class="spacer"></span>
+              <span class="note" id="recCount"></span>
+            </div>
+            <div class="scroll-x">
+              <table class="grid" id="recTable">
+                <thead><tr><th>日時</th><th>氏名</th><th>種別</th><th>方法</th><th class="r">操作</th></tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+            <div class="empty" id="recEmpty">該当する打刻はありません</div>
+          </div>
+        </section>
+
+        <!-- 月次集計 -->
+        <section class="subpanel" id="sub-report" hidden>
+          <div class="card">
+            <h2>月次集計</h2>
+            <div class="row" style="margin-bottom:12px">
+              <input type="month" id="repMonth" style="max-width:180px" />
+              <select id="repEmp" class="btn sm" style="max-width:200px"></select>
+              <span class="spacer"></span>
+              <button class="btn sm" id="csvSummaryBtn">日別CSV</button>
+              <button class="btn sm" id="csvPunchBtn">打刻明細CSV</button>
+            </div>
+            <div class="scroll-x">
+              <table class="grid" id="repTable">
+                <thead><tr><th>日付</th><th>氏名</th><th>出勤</th><th>退勤</th><th class="r">実働</th><th>備考</th></tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+            <div class="empty" id="repEmpty">この月の記録はありません</div>
+          </div>
+          <div class="card">
+            <h2>月合計</h2>
+            <div class="scroll-x">
+              <table class="grid" id="repTotalTable">
+                <thead><tr><th>氏名</th><th class="r">出勤日数</th><th class="r">実働合計</th></tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+            <div class="note" style="margin-top:12px">
+              実働は分単位でそのまま集計します。労働時間は1分単位での把握が原則で、
+              日ごとの切り捨ては認められていません（月の合計で30分未満を四捨五入する扱いは例外的に許容）。
+            </div>
+          </div>
+        </section>
+
+        <!-- 設定 -->
+        <section class="subpanel" id="sub-settings" hidden>
+          <div class="cols">
+            <div>
+              <div class="card">
+                <h2>認証の設定</h2>
+                <div class="setting">
+                  <div class="lb">一致しきい値<small>小さいほど厳格。0.4〜0.5 が目安</small></div>
+                  <input type="range" id="setThreshold" min="0.30" max="0.70" step="0.01" />
+                  <span class="val mono num" id="valThreshold"></span>
+                </div>
+                <div class="setting">
+                  <div class="lb">連続一致の回数<small>同じ人が連続で一致したら確定</small></div>
+                  <input type="range" id="setStreak" min="1" max="8" step="1" />
+                  <span class="val mono num" id="valStreak"></span>
+                </div>
+                <div class="setting">
+                  <div class="lb">二重打刻の抑止<small>同じ種別の打刻をこの時間内は警告します</small></div>
+                  <input type="range" id="setDup" min="0" max="30" step="1" />
+                  <span class="val mono num" id="valDup"></span>
+                </div>
+                <div class="setting">
+                  <div class="lb">検出解像度<small>自動は顔の大きさに合わせて切り替えます</small></div>
+                  <select id="setInputSize" class="btn sm">
+                    <option value="auto">自動（推奨）</option>
+                    <option value="224">224</option>
+                    <option value="320">320</option>
+                    <option value="416">416</option>
+                  </select>
+                </div>
+              </div>
+              <div class="card">
+                <h2>Googleスプレッドシート連携<span class="hint">別の端末から集計を見る</span></h2>
+                <div class="note" id="syncState" style="margin-bottom:12px"></div>
+                <label class="field">
+                  <span>ウェブアプリのURL（Apps Scriptでデプロイして取得）</span>
+                  <input type="text" id="syncUrl" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off" />
+                </label>
+                <label class="field">
+                  <span>合言葉（Apps Script の TOKEN と同じもの）</span>
+                  <input type="text" id="syncToken" placeholder="kintai-himitsu-2026" autocomplete="off" />
+                </label>
+                <label class="field">
+                  <span>この端末の名前（記録に残ります）</span>
+                  <input type="text" id="syncDevice" placeholder="例：レジ横iPad" autocomplete="off" />
+                </label>
+                <div class="setting">
+                  <div class="lb">打刻したら自動で送信<small>電波が悪いときは端末に貯めて、次の機会に再送します</small></div>
+                  <label class="switch"><input type="checkbox" id="syncAuto" /><i></i></label>
+                </div>
+                <div class="row" style="margin-top:12px">
+                  <button class="btn sm" id="syncTestBtn">接続テスト</button>
+                  <button class="btn primary sm" id="syncNowBtn">今すぐ全件送信</button>
+                  <button class="btn sm ghost" id="syncOpenBtn">シートを開く</button>
+                </div>
+                <div class="note" id="syncResult" style="margin-top:10px"></div>
+                <div class="sep"></div>
+                <div class="note">
+                  手順は <span class="mono">kintai.md</span> と <span class="mono">gas/kintai-sheet.gs</span> にあります。
+                  打刻するとスプレッドシートの「打刻」シートに1行増え、「日別」シートが自動で作り直されます。
+                  集計はシートを共有すれば、店長のスマホやPCからそのまま見られます。
+                </div>
+              </div>
+              <div class="card">
+                <h2>データ</h2>
+                <div class="row">
+                  <button class="btn sm" id="exportAllBtn">全データをJSONで書き出し</button>
+                  <input type="file" id="importAllFile" accept="application/json" hidden />
+                  <button class="btn sm" id="importAllBtn">JSONを読み込み</button>
+                  <button class="btn sm danger" id="clearAllBtn">全データを削除</button>
+                </div>
+                <div class="note" style="margin-top:12px">
+                  保存先はこのブラウザの <b>localStorage</b> です。Safariの履歴・Webサイトデータを消すと打刻記録も消えます。
+                  <b>月末のCSV書き出し、または定期的なJSONバックアップを必ず行ってください。</b>
+                </div>
+              </div>
+            </div>
+            <div>
+              <div class="card">
+                <h2>管理画面のロック<span class="hint">パスキー</span></h2>
+                <div id="passkeyState" class="note"></div>
+                <div class="row" style="margin-top:12px">
+                  <button class="btn primary sm" id="regPasskeyBtn">このiPadのパスキーを設定</button>
+                  <button class="btn sm danger" id="delPasskeyBtn" hidden>パスキーを解除</button>
+                </div>
+                <div class="sep"></div>
+                <div class="warn-box">
+                  このロックはブラウザ内だけで検証しています。<b>従業員のうっかり操作を防ぐ程度の強度</b>であり、
+                  開発者ツールを使える人が迂回することは可能です。給与計算に使う確定データは、
+                  CSVに書き出して別途保管してください。
+                </div>
+              </div>
+              <div class="card">
+                <h2>この仕組みについて</h2>
+                <div class="note">
+                  <b>打刻の本人確認</b>：カメラ映像から顔を検出し、128次元の特徴量に変換して登録済みの従業員と照合します。
+                  処理はすべてこの端末内で行われ、顔画像が外部に送信されることはありません。<br /><br />
+                  <b>共用端末での注意</b>：iPadのFace IDは端末の持ち主1人しか登録できないため、
+                  共用端末での本人確認には使えません。この画面が顔認証を使っているのはそのためです。<br /><br />
+                  <b>限界</b>：写真をかざすなりすましは完全には防げません。打刻の不正が問題になる環境では、
+                  管理者による記録の確認・監査を併用してください。<br /><br />
+                  <b>個人情報</b>：顔の特徴量は個人識別符号にあたります。取得目的の明示と本人同意、
+                  退職時の削除（従業員一覧の「削除」）を運用に組み込んでください。
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <!-- 共有のカメラ -->
+    <div id="stage" hidden>
+      <div class="stage-inner mirror" id="stageInner">
+        <video id="cam" playsinline muted autoplay></video>
+        <canvas id="overlay"></canvas>
+        <div class="stage-badge" id="stageBadge"></div>
+        <div class="stage-msg" id="stageMsg">カメラは停止しています</div>
+      </div>
+      <div class="stage-bar">
+        <button class="btn primary" id="camToggle" disabled>カメラを開始</button>
+        <button class="btn sm ghost" id="mirrorToggle">左右反転 ON</button>
+        <span class="spacer"></span>
+        <span class="pill mono num"><span class="dot"></span><span id="fpsText">0 fps</span></span>
+      </div>
+    </div>
+
+    <footer>
+      <div class="note">
+        顔検出・認識モデル：<span class="mono">@vladmandic/face-api 1.7.15</span>（MIT）を同梱。
+        単体で顔認証を試す場合は <a href="face-auth.html" style="color:var(--blue)">face-auth.html</a> へ。
+      </div>
+    </footer>
+  </div>
+
+  <script src="vendor/face-api/face-api.js"></script>
+  <script src="face-engine.js"></script>
+  <script>
+  (function () {
+    "use strict";
+
+    var FE = window.FaceEngine;
+
+    var KEY_EMP = "kintai.employees.v1";
+    var KEY_PUNCH = "kintai.punches.v1";
+    var KEY_CONFIG = "kintai.config.v1";
+    var KEY_ADMIN = "kintai.admin.v1";
+    var KEY_FACEAUTH = "faceauth.people.v1"; // face-auth.html の登録者
+
+    var DEFAULTS = {
+      threshold: 0.45,
+      streak: 3,
+      dupMinutes: 5,      // 同種の打刻をこの分数内は警告
+      inputSize: "auto",
+      scoreThreshold: 0.5,
+      mirror: true,
+      syncUrl: "",        // Apps Script のウェブアプリURL
+      syncToken: "",
+      syncDevice: "",
+      syncAuto: true,
+      lastSyncAt: ""
+    };
+
+    var SHOT_GUIDE = [
+      "正面をまっすぐ見てください",
+      "少しだけ右を向いてください",
+      "少しだけ左を向いてください",
+      "少しあごを引いてください",
+      "少しあごを上げてください"
+    ];
+    var SHOT_COUNT = SHOT_GUIDE.length;
+    var DONE_HOLD_MS = 4000;     // 打刻完了の表示時間
+    var CONFIRM_TIMEOUT_MS = 12000; // 確認画面の自動キャンセル
+
+    // ------------------------------------------------------------------
+    // ユーティリティ
+    // ------------------------------------------------------------------
+    function $(id) { return document.getElementById(id); }
+    function el(tag, cls, text) {
+      var n = document.createElement(tag);
+      if (cls) n.className = cls;
+      if (text != null) n.textContent = text;
+      return n;
+    }
+    function pad(n) { return String(n).padStart(2, "0"); }
+    function uid(p) { return (p || "x") + "_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+    function readJSON(key, fallback) {
+      try { var raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : fallback; }
+      catch (e) { return fallback; }
+    }
+    function writeJSON(key, value) {
+      try { localStorage.setItem(key, JSON.stringify(value)); return true; }
+      catch (e) { alert("保存に失敗しました（保存容量の上限に達している可能性があります）"); return false; }
+    }
+    function dayKey(d) { return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); }
+    function monthKey(d) { return d.getFullYear() + "-" + pad(d.getMonth() + 1); }
+    function hhmm(d) { return pad(d.getHours()) + ":" + pad(d.getMinutes()); }
+    function hhmmss(d) { return hhmm(d) + ":" + pad(d.getSeconds()); }
+    function minutesToHM(min) {
+      if (min == null) return "—";
+      var h = Math.floor(min / 60), m = Math.round(min % 60);
+      return h + ":" + pad(m);
+    }
+    function localInputValue(d) {
+      return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) +
+             "T" + pad(d.getHours()) + ":" + pad(d.getMinutes());
+    }
+    var WEEK = ["日", "月", "火", "水", "木", "金", "土"];
+
+    // ------------------------------------------------------------------
+    // 状態
+    // ------------------------------------------------------------------
+    var config = Object.assign({}, DEFAULTS, readJSON(KEY_CONFIG, {}));
+    var employees = readJSON(KEY_EMP, []);
+    var punches = readJSON(KEY_PUNCH, []);
+    var admin = readJSON(KEY_ADMIN, null);
+
+    var modelsReady = false;
+    var stream = null;
+    var running = false;
+    var mode = "punch";         // punch | enroll
+    var adminUnlocked = !admin; // パスキー未設定なら最初から開いている
+    var lastFrameTs = 0, fpsAvg = 0;
+
+    var kiosk = { state: "idle", person: null, dist: 0, until: 0 };
+    var matchStreak = { id: null, count: 0 };
+    var enroll = { shots: [] };
+    var lastResult = null;
+
+    var video = $("cam");
+    var overlay = $("overlay");
+    var octx = overlay.getContext("2d");
+    var detector = FE.createDetector(function () { return config; });
+
+    // ------------------------------------------------------------------
+    // 時計
+    // ------------------------------------------------------------------
+    function tickClock() {
+      var d = new Date();
+      $("clockTime").textContent = hhmmss(d);
+      $("clockDate").textContent = d.getFullYear() + "/" + pad(d.getMonth() + 1) + "/" + pad(d.getDate()) + "（" + WEEK[d.getDay()] + "）";
+    }
+    setInterval(tickClock, 1000);
+
+    // ------------------------------------------------------------------
+    // モデル
+    // ------------------------------------------------------------------
+    function setStatus(text, cls) {
+      $("statusText").textContent = text;
+      $("statusPill").className = "pill" + (cls ? " " + cls : "");
+    }
+
+    function boot() {
+      setStatus("モデル読み込み中…", "is-load");
+      FE.loadModels({
+        onProgress: function (step) { if (step === "cdn") setStatus("モデルをCDNから取得中…", "is-load"); }
+      }).then(function (backend) {
+        modelsReady = true;
+        setStatus("準備完了 / " + backend, "is-ok");
+        $("camToggle").disabled = false;
+        $("stageMsg").textContent = "「カメラを開始」を押してください";
+      }).catch(function (e) {
+        console.error(e);
+        setStatus("モデルの読み込みに失敗", "is-err");
+        $("stageMsg").innerHTML = "モデルを読み込めませんでした。<br />https もしくは localhost で開いてください。";
+      });
+    }
+
+    // ------------------------------------------------------------------
+    // カメラ
+    // ------------------------------------------------------------------
+    function startCamera() {
+      if (!modelsReady) return;
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        $("stageMsg").hidden = false;
+        $("stageMsg").innerHTML = "このブラウザではカメラを利用できません。<br />https または localhost で開く必要があります。";
+        return;
+      }
+      $("camToggle").disabled = true;
+      navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: { facingMode: "user", width: { ideal: 960 }, height: { ideal: 720 } }
+      }).then(function (s) {
+        stream = s;
+        video.srcObject = s;
+        return video.play();
+      }).then(function () {
+        $("stageMsg").hidden = true;
+        $("camToggle").textContent = "カメラを停止";
+        $("camToggle").classList.remove("primary");
+        $("camToggle").disabled = false;
+        running = true;
+        requestAnimationFrame(loop);
+        refreshEnrollUI();
+      }).catch(function (e) {
+        console.error(e);
+        $("camToggle").disabled = false;
+        $("stageMsg").hidden = false;
+        $("stageMsg").innerHTML = "カメラを開始できませんでした（" + (e && e.name ? e.name : "error") + "）。<br />" +
+          "カメラ権限を許可し、https または localhost で開いてください。";
+      });
+    }
+
+    function stopCamera() {
+      running = false;
+      if (stream) { stream.getTracks().forEach(function (t) { t.stop(); }); stream = null; }
+      video.srcObject = null;
+      octx.clearRect(0, 0, overlay.width, overlay.height);
+      $("stageBadge").innerHTML = "";
+      $("stageMsg").hidden = false;
+      $("stageMsg").textContent = "カメラは停止しています";
+      $("camToggle").textContent = "カメラを開始";
+      $("camToggle").classList.add("primary");
+      $("fpsText").textContent = "0 fps";
+      resetKiosk();
+      refreshEnrollUI();
+    }
+
+    // ------------------------------------------------------------------
+    // 描画
+    // ------------------------------------------------------------------
+    function drawFace(det, view, color, label) {
+      if (!view) return;
+      var b = det.detection.box;
+      var x = b.x * view.scale + view.dx, y = b.y * view.scale + view.dy;
+      var w = b.width * view.scale, h = b.height * view.scale;
+      octx.strokeStyle = color;
+      octx.lineWidth = 2;
+      var c = Math.min(w, h) * 0.22;
+      [[x, y, 1, 1], [x + w, y, -1, 1], [x, y + h, 1, -1], [x + w, y + h, -1, -1]].forEach(function (p) {
+        octx.beginPath();
+        octx.moveTo(p[0] + p[2] * c, p[1]);
+        octx.lineTo(p[0], p[1]);
+        octx.lineTo(p[0], p[1] + p[3] * c);
+        octx.stroke();
+      });
+      if (label) {
+        octx.save();
+        if (config.mirror) { octx.translate(overlay.width, 0); octx.scale(-1, 1); x = overlay.width - x - w; }
+        octx.font = "500 14px 'Noto Sans JP', sans-serif";
+        var tw = octx.measureText(label).width;
+        var ty = Math.max(y - 28, 4);
+        octx.fillStyle = color;
+        octx.fillRect(x, ty, tw + 16, 24);
+        octx.fillStyle = "#fff";
+        octx.fillText(label, x + 8, ty + 16);
+        octx.restore();
+      }
+    }
+
+    function setBadges(items) {
+      var box = $("stageBadge");
+      box.innerHTML = "";
+      items.forEach(function (t) { box.appendChild(el("span", "badge", t)); });
+    }
+
+    // ------------------------------------------------------------------
+    // 推論ループ
+    // ------------------------------------------------------------------
+    function loop() {
+      if (!running) return;
+      if (!video.videoWidth) { requestAnimationFrame(loop); return; }
+
+      detector.detect(video).then(function (det) {
+        var t = performance.now();
+        if (lastFrameTs) {
+          var fps = 1000 / (t - lastFrameTs);
+          fpsAvg = fpsAvg ? fpsAvg * 0.8 + fps * 0.2 : fps;
+          $("fpsText").textContent = fpsAvg.toFixed(1) + " fps";
+        }
+        lastFrameTs = t;
+
+        var view = FE.fitOverlay(video, overlay);
+        octx.clearRect(0, 0, overlay.width, overlay.height);
+        lastResult = det || null;
+
+        if (!det) {
+          setBadges(["顔を検出中…"]);
+          if (mode === "punch") handleNoFace();
+          else syncShotButton();
+        } else {
+          setBadges(["検出 " + Math.round(det.detection.score * 100) + "%" +
+                     (detector.activeSize ? " / " + detector.activeSize + "px" : "")]);
+          if (mode === "punch") handlePunchFrame(det, view);
+          else handleEnrollFrame(det, view);
+        }
+      }).catch(function (e) { console.error(e); })
+        .then(function () { if (running) requestAnimationFrame(loop); });
+    }
+
+    // ------------------------------------------------------------------
+    // 打刻フロー
+    // ------------------------------------------------------------------
+    function resetKiosk() {
+      kiosk = { state: "idle", person: null, dist: 0, until: 0 };
+      matchStreak = { id: null, count: 0 };
+      $("punchActions").hidden = true;
+      $("doneBox").hidden = true;
+      $("doneBox").innerHTML = "";
+      showWho("idle", running ? "顔を探しています" : "待機中",
+        running ? "カメラの正面を向いてください" : "「カメラを開始」を押してください", null);
+    }
+
+    function handleNoFace() {
+      if (kiosk.state === "done" && Date.now() > kiosk.until) { resetKiosk(); return; }
+      if (kiosk.state === "confirm" && Date.now() > kiosk.until) { resetKiosk(); return; }
+      if (kiosk.state !== "idle") return;
+      matchStreak = { id: null, count: 0 };
+      showWho("idle", "顔を探しています", "カメラの正面を向いてください", null);
+    }
+
+    function handlePunchFrame(det, view) {
+      var best = FE.identify(Array.from(det.descriptor), employees);
+      var isMatch = best.person && best.dist <= config.threshold;
+      var color = isMatch ? "#1f8a5b" : "#d83a3a";
+
+      if (kiosk.state === "done") {
+        drawFace(det, view, "#1f8a5b", null);
+        if (Date.now() > kiosk.until) resetKiosk();
+        return;
+      }
+      if (kiosk.state === "confirm") {
+        // 確認中は表示を固定。顔が変わらない限り待つ
+        drawFace(det, view, "#0047ff", kiosk.person.name);
+        if (Date.now() > kiosk.until) resetKiosk();
+        return;
+      }
+
+      var key = isMatch ? best.person.id : "__unknown__";
+      if (matchStreak.id === key) matchStreak.count++;
+      else matchStreak = { id: key, count: 1 };
+
+      var confirmed = matchStreak.count >= config.streak;
+      drawFace(det, view, confirmed ? color : "#0047ff",
+        employees.length === 0 ? "従業員が未登録" : (isMatch ? best.person.name : "未登録の顔"));
+
+      if (!confirmed) {
+        showWho("pending", "照合中…", "一致判定 " + matchStreak.count + " / " + config.streak, null);
+        return;
+      }
+
+      if (!isMatch) {
+        showWho("ng", "登録されていません",
+          employees.length === 0
+            ? "「管理」タブから従業員の顔を登録してください"
+            : "顔が登録されていません。管理者に連絡してください",
+          null);
+        matchStreak = { id: null, count: 0 };
+        return;
+      }
+
+      openConfirm(best.person, best.dist);
+    }
+
+    function openConfirm(person, dist) {
+      kiosk = { state: "confirm", person: person, dist: dist, until: Date.now() + CONFIRM_TIMEOUT_MS };
+      var next = nextPunchType(person.id);
+      var last = lastPunchOf(person.id);
+      var meta = "距離 " + dist.toFixed(2);
+      if (last) meta += " ・ 前回 " + labelOf(last.type) + " " + hhmm(new Date(last.ts));
+      showWho("ok", person.name + " さん", meta, person);
+
+      $("punchActions").hidden = false;
+      $("doneBox").hidden = true;
+      var inBtn = $("btnIn"), outBtn = $("btnOut");
+      inBtn.className = "btn big" + (next === "in" ? " ok" : " ghost");
+      outBtn.className = "btn big" + (next === "out" ? " primary" : " ghost");
+      inBtn.textContent = next === "in" ? "出勤（推奨）" : "出勤";
+      outBtn.textContent = next === "out" ? "退勤（推奨）" : "退勤";
+      $("punchHint").textContent = next === "in"
+        ? "出勤を押すと打刻されます。"
+        : "退勤を押すと打刻されます。勤務時間は自動で計算されます。";
+    }
+
+    function showWho(kind, name, meta, person) {
+      var box = $("whoBox");
+      box.className = "who-box" + (kind === "idle" ? "" : " " + kind);
+      $("whoName").textContent = name;
+      $("whoMeta").textContent = meta;
+      var slot = $("whoAvatar");
+      var next;
+      if (person && person.thumb) {
+        next = el("img", "avatar");
+        next.src = person.thumb;
+        next.alt = person.name;
+      } else {
+        next = el("div", "avatar");
+      }
+      next.id = "whoAvatar";
+      slot.replaceWith(next);
+    }
+
+    function labelOf(type) { return type === "in" ? "出勤" : "退勤"; }
+
+    function punchesOf(empId) {
+      return punches.filter(function (p) { return p.empId === empId; })
+        .sort(function (a, b) { return new Date(a.ts) - new Date(b.ts); });
+    }
+    function lastPunchOf(empId) {
+      var list = punchesOf(empId);
+      return list.length ? list[list.length - 1] : null;
+    }
+    function nextPunchType(empId) {
+      var last = lastPunchOf(empId);
+      return last && last.type === "in" ? "out" : "in";
+    }
+
+    function doPunch(type) {
+      if (kiosk.state !== "confirm" || !kiosk.person) return;
+      var person = kiosk.person;
+      var now = new Date();
+
+      // 二重打刻の抑止
+      var last = lastPunchOf(person.id);
+      if (last && last.type === type && config.dupMinutes > 0) {
+        var diffMin = (now - new Date(last.ts)) / 60000;
+        if (diffMin < config.dupMinutes) {
+          if (!confirm(person.name + " さんは " + hhmm(new Date(last.ts)) + " に" + labelOf(type) +
+                       "の打刻済みです（" + Math.floor(diffMin) + "分前）。\nもう一度打刻しますか？")) {
+            resetKiosk();
+            return;
+          }
+        }
+      }
+
+      punches.push({
+        id: uid("pn"), empId: person.id, type: type,
+        ts: now.toISOString(), source: "face", dist: Number(kiosk.dist.toFixed(3))
+      });
+      writeJSON(KEY_PUNCH, punches);
+
+      kiosk.state = "done";
+      kiosk.until = Date.now() + DONE_HOLD_MS;
+      $("punchActions").hidden = true;
+      var box = $("doneBox");
+      box.hidden = false;
+      box.innerHTML = "";
+      var banner = el("div", "done-banner");
+      banner.appendChild(el("div", "t", person.name + " さん " + labelOf(type)));
+      banner.appendChild(el("div", "s", hhmmss(now) + " に打刻しました"));
+      box.appendChild(banner);
+      showWho("ok", person.name + " さん", labelOf(type) + " " + hhmm(now), person);
+      $("punchHint").textContent = "打刻を記録しました。次の人はカメラに顔を向けてください。";
+
+      renderAll();
+      if (config.syncAuto && config.syncUrl) flushSync(false, function (e) { if (e) console.warn("同期に失敗:", e.message); });
+      setTimeout(function () { if (kiosk.state === "done") resetKiosk(); }, DONE_HOLD_MS + 200);
+    }
+
+    // ------------------------------------------------------------------
+    // 従業員の顔登録
+    // ------------------------------------------------------------------
+    function enrollQuality(det) {
+      var ratio = det.detection.box.width / video.videoWidth;
+      if (ratio < 0.12) return { ok: false, msg: "もう少し近づいてください" };
+      if (ratio > 0.8) return { ok: false, msg: "少し離れてください" };
+      if (det.detection.score < 0.45) return { ok: false, msg: "明るさと角度を調整してください" };
+      return { ok: true, msg: "撮影できます" };
+    }
+
+    function handleEnrollFrame(det, view) {
+      var q = enrollQuality(det);
+      drawFace(det, view, q.ok ? "#0047ff" : "#b07b00", q.msg);
+      syncShotButton();
+    }
+
+    function canShoot() {
+      return running && mode === "enroll" && lastResult && enroll.shots.length < SHOT_COUNT &&
+             $("empName").value.trim().length > 0 && $("empConsent").checked;
+    }
+    function syncShotButton() {
+      var can = canShoot();
+      if ($("shotBtn").disabled !== !can) $("shotBtn").disabled = !can;
+      var canAdd = running && mode === "enroll" && lastResult && $("addSampleTarget").value;
+      if ($("addSampleBtn").disabled !== !canAdd) $("addSampleBtn").disabled = !canAdd;
+    }
+
+    function takeShot() {
+      if (!canShoot()) return;
+      var det = lastResult;
+      enroll.shots.push({
+        descriptor: Array.from(det.descriptor),
+        thumb: FE.cropFace(video, det.detection.box, enroll.shots.length === 0 ? 160 : 64)
+      });
+      refreshEnrollUI();
+    }
+
+    function refreshEnrollUI() {
+      var shots = $("shots");
+      shots.innerHTML = "";
+      for (var i = 0; i < SHOT_COUNT; i++) {
+        var s = enroll.shots[i];
+        var d = el("div", "shot" + (!s && i === enroll.shots.length ? " next" : ""));
+        if (s) { var img = el("img"); img.src = s.thumb; d.appendChild(img); }
+        else d.textContent = String(i + 1);
+        shots.appendChild(d);
+      }
+      var guide = $("enrollGuide");
+      if (!running) guide.textContent = "まずカメラを開始してください。";
+      else if (!$("empName").value.trim()) guide.textContent = "氏名を入力してください。";
+      else if (!$("empConsent").checked) guide.textContent = "本人同意のチェックを入れてください。";
+      else if (enroll.shots.length >= SHOT_COUNT) guide.textContent = "5枚そろいました。「登録する」を押してください。";
+      else guide.textContent = (enroll.shots.length + 1) + " / " + SHOT_COUNT + "：" + SHOT_GUIDE[enroll.shots.length];
+
+      $("shotBtn").disabled = !canShoot();
+      $("shotBtn").textContent = "撮影する（" + enroll.shots.length + "/" + SHOT_COUNT + "）";
+      $("resetShotBtn").disabled = enroll.shots.length === 0;
+      $("saveEmpBtn").disabled = enroll.shots.length === 0 || !$("empName").value.trim() || !$("empConsent").checked;
+      syncShotButton();
+    }
+
+    function saveEmployee() {
+      var name = $("empName").value.trim();
+      if (!name || !enroll.shots.length) return;
+      var descriptors = enroll.shots.map(function (s) { return s.descriptor; });
+      var best = FE.identify(FE.meanDescriptor(descriptors), employees);
+      if (best.person && best.dist <= config.threshold) {
+        if (!confirm("「" + best.person.name + "」と非常に似ています（距離 " + best.dist.toFixed(2) + "）。\n" +
+                     "同じ人の可能性があります。それでも新規登録しますか？")) return;
+      }
+      employees.push({
+        id: uid("emp"), name: name, descriptors: descriptors,
+        descriptor: FE.meanDescriptor(descriptors), thumb: enroll.shots[0].thumb,
+        createdAt: new Date().toISOString()
+      });
+      writeJSON(KEY_EMP, employees);
+      enroll.shots = [];
+      $("empName").value = "";
+      $("empConsent").checked = false;
+      refreshEnrollUI();
+      renderAll();
+      alert("「" + name + "」を登録しました。");
+    }
+
+    function addSampleToEmployee() {
+      var id = $("addSampleTarget").value;
+      var emp = employees.filter(function (e) { return e.id === id; })[0];
+      if (!emp || !lastResult) return;
+      emp.descriptors = (emp.descriptors || [emp.descriptor]).concat([Array.from(lastResult.descriptor)]);
+      emp.descriptor = FE.meanDescriptor(emp.descriptors);
+      writeJSON(KEY_EMP, employees);
+      renderAll();
+      alert(emp.name + " さんのサンプルを追加しました（" + emp.descriptors.length + "枚）。");
+    }
+
+    function enrollFromImage(file) {
+      var name = $("empName").value.trim();
+      if (!name || !$("empConsent").checked) { alert("氏名の入力と本人同意のチェックが必要です。"); return; }
+      var img = new Image();
+      img.onload = function () {
+        FE.detectFromImage(img).then(function (det) {
+          if (!det) { alert("顔を検出できませんでした。"); return; }
+          if (det.faceCount > 1 && !confirm("画像に " + det.faceCount + " 人の顔があります。一番大きい顔を登録します。よろしいですか？")) return;
+          var desc = Array.from(det.descriptor);
+          employees.push({
+            id: uid("emp"), name: name, descriptors: [desc], descriptor: desc,
+            thumb: FE.cropFace(img, det.detection.box, 160), createdAt: new Date().toISOString()
+          });
+          writeJSON(KEY_EMP, employees);
+          $("empName").value = "";
+          $("empConsent").checked = false;
+          refreshEnrollUI();
+          renderAll();
+          alert("「" + name + "」を画像から登録しました。");
+        });
+      };
+      img.onerror = function () { alert("画像を読み込めませんでした。"); };
+      img.src = URL.createObjectURL(file);
+    }
+
+    function importFromFaceAuth() {
+      var people = readJSON(KEY_FACEAUTH, []);
+      if (!people.length) { alert("顔認証システム（face-auth.html）の登録者が見つかりません。\n同じブラウザで登録したデータだけを取り込めます。"); return; }
+      var added = 0;
+      people.forEach(function (p) {
+        if (employees.some(function (e) { return e.name === p.name; })) return;
+        employees.push({
+          id: uid("emp"), name: p.name,
+          descriptors: p.descriptors && p.descriptors.length ? p.descriptors : [p.descriptor],
+          descriptor: p.descriptor, thumb: p.thumb || "",
+          createdAt: new Date().toISOString(), note: p.note || ""
+        });
+        added++;
+      });
+      writeJSON(KEY_EMP, employees);
+      renderAll();
+      alert(added + " 人を取り込みました。");
+    }
+
+    // ------------------------------------------------------------------
+    // 勤務時間の計算
+    // ------------------------------------------------------------------
+    /*
+     * 出勤→退勤を時系列でペアにする。日付は「出勤打刻の日」に属するものとして扱い、
+     * 日をまたぐ勤務もひとつの勤務として集計する。
+     */
+    function buildSessions(empId, filterFn) {
+      var list = punchesOf(empId);
+      var sessions = [];
+      var open = null;
+      list.forEach(function (p) {
+        if (p.type === "in") {
+          if (open) sessions.push({ inAt: open.ts, outAt: null, warn: "退勤打刻なし" });
+          open = p;
+        } else {
+          if (open) {
+            sessions.push({ inAt: open.ts, outAt: p.ts, warn: "" });
+            open = null;
+          } else {
+            sessions.push({ inAt: null, outAt: p.ts, warn: "出勤打刻なし" });
+          }
+        }
+      });
+      if (open) sessions.push({ inAt: open.ts, outAt: null, warn: "勤務中" });
+      sessions.forEach(function (s) {
+        s.empId = empId;
+        s.date = dayKey(new Date(s.inAt || s.outAt));
+        s.minutes = (s.inAt && s.outAt) ? Math.round((new Date(s.outAt) - new Date(s.inAt)) / 60000) : null;
+      });
+      return filterFn ? sessions.filter(filterFn) : sessions;
+    }
+
+    function empById(id) {
+      return employees.filter(function (e) { return e.id === id; })[0] || null;
+    }
+    function empName(id) {
+      var e = empById(id);
+      return e ? e.name : "（削除済み）";
+    }
+
+    // ------------------------------------------------------------------
+    // 表示
+    // ------------------------------------------------------------------
+    function renderRecent() {
+      var body = $("recentTable").querySelector("tbody");
+      body.innerHTML = "";
+      var list = punches.slice().sort(function (a, b) { return new Date(b.ts) - new Date(a.ts); }).slice(0, 8);
+      $("recentEmpty").hidden = list.length > 0;
+      list.forEach(function (p) {
+        var d = new Date(p.ts);
+        var tr = el("tr");
+        tr.appendChild(el("td", "mono num", hhmm(d)));
+        tr.appendChild(el("td", null, empName(p.empId)));
+        var td = el("td");
+        td.appendChild(el("span", "tag " + p.type, labelOf(p.type)));
+        tr.appendChild(td);
+        body.appendChild(tr);
+      });
+    }
+
+    function renderToday() {
+      var today = dayKey(new Date());
+      $("todayDateLabel").textContent = today;
+
+      var ul = $("rosterList");
+      ul.innerHTML = "";
+      $("rosterEmpty").hidden = employees.length > 0;
+      employees.forEach(function (e) {
+        var last = lastPunchOf(e.id);
+        var working = last && last.type === "in";
+        var li = el("li");
+        var img = el("img");
+        img.src = e.thumb || "";
+        img.alt = e.name;
+        li.appendChild(img);
+        var box = el("div");
+        box.style.flex = "1 1 auto";
+        box.appendChild(el("div", "nm", e.name));
+        box.appendChild(el("div", "sm", last ? labelOf(last.type) + " " + hhmm(new Date(last.ts)) : "本日の打刻なし"));
+        li.appendChild(box);
+        li.appendChild(el("span", "tag " + (working ? "working" : "off"), working ? "勤務中" : "退勤"));
+        ul.appendChild(li);
+      });
+
+      var tbody = $("todayTable").querySelector("tbody");
+      tbody.innerHTML = "";
+      var list = punches.filter(function (p) { return dayKey(new Date(p.ts)) === today; })
+        .sort(function (a, b) { return new Date(b.ts) - new Date(a.ts); });
+      $("todayEmpty").hidden = list.length > 0;
+      list.forEach(function (p) {
+        var tr = el("tr");
+        tr.appendChild(el("td", "mono num", hhmmss(new Date(p.ts))));
+        tr.appendChild(el("td", null, empName(p.empId)));
+        var t1 = el("td");
+        t1.appendChild(el("span", "tag " + p.type, labelOf(p.type)));
+        tr.appendChild(t1);
+        var t2 = el("td");
+        t2.appendChild(el("span", "tag " + (p.source === "face" ? "off" : "manual"), p.source === "face" ? "顔認証" : "手修正"));
+        tr.appendChild(t2);
+        tbody.appendChild(tr);
+      });
+
+      var sumBody = $("todaySumTable").querySelector("tbody");
+      sumBody.innerHTML = "";
+      var rows = [];
+      employees.forEach(function (e) {
+        buildSessions(e.id, function (s) { return s.date === today; }).forEach(function (s) { rows.push(s); });
+      });
+      $("todaySumEmpty").hidden = rows.length > 0;
+      rows.forEach(function (s) {
+        var tr = el("tr");
+        tr.appendChild(el("td", null, empName(s.empId)));
+        tr.appendChild(el("td", "mono num", s.inAt ? hhmm(new Date(s.inAt)) : "—"));
+        tr.appendChild(el("td", "mono num", s.outAt ? hhmm(new Date(s.outAt)) : "—"));
+        tr.appendChild(el("td", "r mono num", s.minutes == null ? (s.warn || "—") : minutesToHM(s.minutes)));
+        sumBody.appendChild(tr);
+      });
+    }
+
+    function renderEmployees() {
+      var ul = $("empList");
+      ul.innerHTML = "";
+      $("empEmpty").hidden = employees.length > 0;
+      $("empCount").textContent = employees.length ? employees.length + " 人" : "";
+      employees.forEach(function (e) {
+        var li = el("li");
+        var img = el("img");
+        img.src = e.thumb || "";
+        img.alt = e.name;
+        li.appendChild(img);
+        var box = el("div");
+        box.style.flex = "1 1 auto";
+        box.style.minWidth = "0";
+        box.appendChild(el("div", "nm", e.name));
+        box.appendChild(el("div", "sm", (e.descriptors ? e.descriptors.length : 1) + " サンプル ・ " +
+          punchesOf(e.id).length + " 打刻"));
+        li.appendChild(box);
+        var rn = el("button", "btn sm ghost", "改名");
+        rn.onclick = function () {
+          var v = prompt("新しい氏名", e.name);
+          if (v && v.trim()) { e.name = v.trim(); writeJSON(KEY_EMP, employees); renderAll(); }
+        };
+        li.appendChild(rn);
+        var del = el("button", "btn sm danger", "削除");
+        del.onclick = function () {
+          if (!confirm("「" + e.name + "」を削除します。\n打刻記録は残りますが氏名は表示されなくなります。よろしいですか？")) return;
+          employees = employees.filter(function (x) { return x.id !== e.id; });
+          writeJSON(KEY_EMP, employees);
+          renderAll();
+        };
+        li.appendChild(del);
+        ul.appendChild(li);
+      });
+
+      ["addSampleTarget", "addPunchEmp", "recEmp", "repEmp"].forEach(function (id) {
+        var sel = $(id);
+        var prev = sel.value;
+        sel.innerHTML = "";
+        if (id === "recEmp" || id === "repEmp") {
+          var all = el("option", null, "全員");
+          all.value = "";
+          sel.appendChild(all);
+        }
+        employees.forEach(function (e) {
+          var o = el("option", null, e.name);
+          o.value = e.id;
+          sel.appendChild(o);
+        });
+        if (prev) sel.value = prev;
+      });
+    }
+
+    function renderRecords() {
+      var month = $("recMonth").value;
+      var empId = $("recEmp").value;
+      var body = $("recTable").querySelector("tbody");
+      body.innerHTML = "";
+      var list = punches.filter(function (p) {
+        if (empId && p.empId !== empId) return false;
+        if (month && monthKey(new Date(p.ts)) !== month) return false;
+        return true;
+      }).sort(function (a, b) { return new Date(b.ts) - new Date(a.ts); });
+      $("recEmpty").hidden = list.length > 0;
+      $("recCount").textContent = list.length + " 件";
+      list.slice(0, 200).forEach(function (p) {
+        var d = new Date(p.ts);
+        var tr = el("tr");
+        tr.appendChild(el("td", "mono num", pad(d.getMonth() + 1) + "/" + pad(d.getDate()) + " " + hhmm(d)));
+        tr.appendChild(el("td", null, empName(p.empId)));
+        var t1 = el("td");
+        t1.appendChild(el("span", "tag " + p.type, labelOf(p.type)));
+        tr.appendChild(t1);
+        var t2 = el("td");
+        t2.appendChild(el("span", "tag " + (p.source === "face" ? "off" : "manual"), p.source === "face" ? "顔認証" : "手修正"));
+        tr.appendChild(t2);
+        var act = el("td", "r");
+        var ed = el("button", "btn sm ghost", "時刻変更");
+        ed.onclick = function () {
+          var v = prompt("新しい日時（YYYY-MM-DD HH:MM）", d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + " " + hhmm(d));
+          if (!v) return;
+          var nd = new Date(v.replace(" ", "T"));
+          if (isNaN(nd.getTime())) { alert("日時の形式が正しくありません。"); return; }
+          p.ts = nd.toISOString();
+          p.source = "manual";
+          p.editedAt = new Date().toISOString();
+          p.synced = false; // 修正した内容をシートへ送り直す
+          writeJSON(KEY_PUNCH, punches);
+          renderAll();
+        };
+        act.appendChild(ed);
+        var del = el("button", "btn sm danger", "削除");
+        del.onclick = function () {
+          if (!confirm("この打刻を削除します。よろしいですか？")) return;
+          punches = punches.filter(function (x) { return x.id !== p.id; });
+          writeJSON(KEY_PUNCH, punches);
+          renderAll();
+        };
+        act.appendChild(del);
+        tr.appendChild(act);
+        body.appendChild(tr);
+      });
+    }
+
+    function monthSessions() {
+      var month = $("repMonth").value;
+      var empId = $("repEmp").value;
+      var rows = [];
+      employees.forEach(function (e) {
+        if (empId && e.id !== empId) return;
+        buildSessions(e.id, function (s) { return !month || s.date.slice(0, 7) === month; })
+          .forEach(function (s) { rows.push(s); });
+      });
+      rows.sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
+      return rows;
+    }
+
+    function renderReport() {
+      var rows = monthSessions();
+      var body = $("repTable").querySelector("tbody");
+      body.innerHTML = "";
+      $("repEmpty").hidden = rows.length > 0;
+      rows.forEach(function (s) {
+        var d = new Date(s.date + "T00:00:00");
+        var tr = el("tr");
+        tr.appendChild(el("td", "mono num", pad(d.getMonth() + 1) + "/" + pad(d.getDate()) + "（" + WEEK[d.getDay()] + "）"));
+        tr.appendChild(el("td", null, empName(s.empId)));
+        tr.appendChild(el("td", "mono num", s.inAt ? hhmm(new Date(s.inAt)) : "—"));
+        tr.appendChild(el("td", "mono num", s.outAt ? hhmm(new Date(s.outAt)) : "—"));
+        tr.appendChild(el("td", "r mono num", s.minutes == null ? "—" : minutesToHM(s.minutes)));
+        tr.appendChild(el("td", null, s.warn || ""));
+        body.appendChild(tr);
+      });
+
+      var totals = {};
+      rows.forEach(function (s) {
+        if (!totals[s.empId]) totals[s.empId] = { days: 0, minutes: 0 };
+        totals[s.empId].days++;
+        totals[s.empId].minutes += s.minutes || 0;
+      });
+      var tBody = $("repTotalTable").querySelector("tbody");
+      tBody.innerHTML = "";
+      Object.keys(totals).forEach(function (id) {
+        var tr = el("tr");
+        tr.appendChild(el("td", null, empName(id)));
+        tr.appendChild(el("td", "r mono num", totals[id].days + " 日"));
+        tr.appendChild(el("td", "r mono num", minutesToHM(totals[id].minutes)));
+        tBody.appendChild(tr);
+      });
+    }
+
+    function renderAll() {
+      renderRecent();
+      renderToday();
+      renderEmployees();
+      renderRecords();
+      renderReport();
+    }
+
+    // ------------------------------------------------------------------
+    // CSV
+    // ------------------------------------------------------------------
+    function downloadCSV(filename, rows) {
+      var csv = rows.map(function (r) {
+        return r.map(function (v) {
+          var s = v == null ? "" : String(v);
+          return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+        }).join(",");
+      }).join("\r\n");
+      // Excel で文字化けしないよう UTF-8 BOM を付ける
+      var blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" });
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      a.click();
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+    }
+
+    function exportSummaryCSV() {
+      var month = $("repMonth").value || monthKey(new Date());
+      var rows = [["日付", "曜日", "氏名", "出勤", "退勤", "実働(時:分)", "実働(分)", "備考"]];
+      monthSessions().forEach(function (s) {
+        var d = new Date(s.date + "T00:00:00");
+        rows.push([
+          s.date, WEEK[d.getDay()], empName(s.empId),
+          s.inAt ? hhmm(new Date(s.inAt)) : "",
+          s.outAt ? hhmm(new Date(s.outAt)) : "",
+          s.minutes == null ? "" : minutesToHM(s.minutes),
+          s.minutes == null ? "" : s.minutes,
+          s.warn || ""
+        ]);
+      });
+      downloadCSV("kintai-" + month + "-日別.csv", rows);
+    }
+
+    function exportPunchCSV() {
+      var month = $("repMonth").value || monthKey(new Date());
+      var empId = $("repEmp").value;
+      var rows = [["日時", "氏名", "種別", "方法", "顔の距離"]];
+      punches.filter(function (p) {
+        if (empId && p.empId !== empId) return false;
+        return monthKey(new Date(p.ts)) === month;
+      }).sort(function (a, b) { return new Date(a.ts) - new Date(b.ts); })
+        .forEach(function (p) {
+          var d = new Date(p.ts);
+          rows.push([
+            d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + " " + hhmmss(d),
+            empName(p.empId), labelOf(p.type),
+            p.source === "face" ? "顔認証" : "手修正",
+            p.dist == null ? "" : p.dist
+          ]);
+        });
+      downloadCSV("kintai-" + month + "-打刻明細.csv", rows);
+    }
+
+    // ------------------------------------------------------------------
+    // Googleスプレッドシート連携
+    // ------------------------------------------------------------------
+    /*
+     * Apps Script のウェブアプリへ打刻を送る。
+     * Content-Type を text/plain にしているのは、プリフライト（OPTIONS）を避けるため。
+     * Apps Script は OPTIONS に応答できないため、JSON で送るとCORSで弾かれる。
+     */
+    function syncPost(payload) {
+      var url = (config.syncUrl || "").trim();
+      if (!url) return Promise.reject(new Error("URLが未設定です"));
+      return fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify(payload),
+        redirect: "follow"
+      }).then(function (res) {
+        return res.text().then(function (text) {
+          var data;
+          try { data = JSON.parse(text); }
+          catch (e) { throw new Error("応答を解釈できません（URLが正しいか、デプロイの公開範囲を確認してください）"); }
+          if (!data.ok) throw new Error(data.error || "送信に失敗しました");
+          return data;
+        });
+      });
+    }
+
+    function unsyncedPunches() {
+      return punches.filter(function (p) { return !p.synced; });
+    }
+
+    function punchPayload(list) {
+      return list.map(function (p) {
+        return { id: p.id, ts: p.ts, name: empName(p.empId), type: p.type, source: p.source, device: config.syncDevice || "" };
+      });
+    }
+
+    var syncing = false;
+    function flushSync(all, onDone) {
+      if (syncing) return;
+      var list = all ? punches.slice() : unsyncedPunches();
+      if (!list.length) { if (onDone) onDone(null, { added: 0, skipped: 0 }); renderSyncState(); return; }
+      if (!config.syncUrl) { if (onDone) onDone(new Error("URLが未設定です")); return; }
+      syncing = true;
+      renderSyncState("送信中…");
+      syncPost({ token: config.syncToken, device: config.syncDevice, punches: punchPayload(list) })
+        .then(function (data) {
+          var ids = {};
+          list.forEach(function (p) { ids[p.id] = true; });
+          punches.forEach(function (p) { if (ids[p.id]) p.synced = true; });
+          writeJSON(KEY_PUNCH, punches);
+          config.lastSyncAt = new Date().toISOString();
+          writeJSON(KEY_CONFIG, config);
+          syncing = false;
+          renderSyncState();
+          if (onDone) onDone(null, data);
+        })
+        .catch(function (e) {
+          syncing = false;
+          renderSyncState(); // 未送信の件数表示に戻す
+          if (onDone) onDone(e);
+        });
+    }
+
+    function renderSyncState(busy) {
+      var pending = unsyncedPunches().length;
+      var box = $("syncState");
+      if (box) {
+        if (!config.syncUrl) {
+          box.innerHTML = "スプレッドシート連携は<b>未設定</b>です。打刻はこの端末の中だけに保存されます。";
+        } else {
+          box.innerHTML = "連携<b>あり</b>：" +
+            (config.lastSyncAt ? "最終送信 " + new Date(config.lastSyncAt).toLocaleString("ja-JP") : "未送信") +
+            " ／ 未送信 " + pending + " 件";
+        }
+      }
+      var badge = $("syncBadge");
+      if (badge) {
+        if (!config.syncUrl) badge.hidden = true;
+        else {
+          badge.hidden = false;
+          badge.textContent = busy ? "スプレッドシートへ" + busy
+            : (pending ? "未送信の打刻が " + pending + " 件あります（次の打刻時に再送します）" : "スプレッドシートと同期済み");
+        }
+      }
+    }
+
+    // ------------------------------------------------------------------
+    // パスキー（管理画面のロック）
+    // ------------------------------------------------------------------
+    function bufToB64u(buf) {
+      var bytes = new Uint8Array(buf), s = "";
+      for (var i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+      return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    }
+    function b64uToBuf(str) {
+      var s = str.replace(/-/g, "+").replace(/_/g, "/");
+      while (s.length % 4) s += "=";
+      var bin = atob(s), bytes = new Uint8Array(bin.length);
+      for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      return bytes.buffer;
+    }
+    // WebAuthn の ECDSA 署名は DER なので、WebCrypto 用に r||s の生バイト列に変換する
+    function derToRaw(der) {
+      var offset = 2; // 0x30, length
+      if (der[1] & 0x80) offset += (der[1] & 0x7f);
+      function readInt() {
+        if (der[offset] !== 0x02) throw new Error("署名の形式が不正です");
+        var len = der[offset + 1];
+        var start = offset + 2;
+        var bytes = der.slice(start, start + len);
+        offset = start + len;
+        while (bytes.length > 32 && bytes[0] === 0) bytes = bytes.slice(1);
+        var out = new Uint8Array(32);
+        out.set(bytes, 32 - bytes.length);
+        return out;
+      }
+      var r = readInt(), s = readInt();
+      var raw = new Uint8Array(64);
+      raw.set(r, 0); raw.set(s, 32);
+      return raw;
+    }
+
+    function passkeySupported() {
+      return !!(window.PublicKeyCredential && navigator.credentials && navigator.credentials.create);
+    }
+
+    function registerPasskey() {
+      if (!passkeySupported()) { alert("この端末・ブラウザはパスキーに対応していません。"); return; }
+      var challenge = crypto.getRandomValues(new Uint8Array(32));
+      var userId = crypto.getRandomValues(new Uint8Array(16));
+      navigator.credentials.create({
+        publicKey: {
+          challenge: challenge,
+          rp: { name: "勤怠システム" },
+          user: { id: userId, name: "kintai-admin", displayName: "勤怠システム管理者" },
+          pubKeyCredParams: [{ type: "public-key", alg: -7 }], // ES256
+          authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required", residentKey: "preferred" },
+          timeout: 60000,
+          attestation: "none"
+        }
+      }).then(function (cred) {
+        var pub = cred.response.getPublicKey ? cred.response.getPublicKey() : null;
+        if (!pub) throw new Error("このブラウザからは公開鍵を取り出せません");
+        admin = {
+          credentialId: bufToB64u(cred.rawId),
+          publicKey: bufToB64u(pub),
+          createdAt: new Date().toISOString()
+        };
+        writeJSON(KEY_ADMIN, admin);
+        adminUnlocked = true;
+        renderPasskeyState();
+        applyLock();
+        alert("パスキーを設定しました。次回から管理画面はFace ID等での解錠が必要になります。");
+      }).catch(function (e) {
+        console.error(e);
+        alert("パスキーを設定できませんでした：" + (e && e.message ? e.message : e));
+      });
+    }
+
+    function unlockWithPasskey() {
+      $("lockError").textContent = "";
+      if (!passkeySupported()) { $("lockError").textContent = "この端末はパスキーに対応していません。"; return; }
+      var challenge = crypto.getRandomValues(new Uint8Array(32));
+      var expected = bufToB64u(challenge);
+      navigator.credentials.get({
+        publicKey: {
+          challenge: challenge,
+          allowCredentials: [{ type: "public-key", id: b64uToBuf(admin.credentialId) }],
+          userVerification: "required",
+          timeout: 60000
+        }
+      }).then(function (assertion) {
+        var r = assertion.response;
+        var clientData = JSON.parse(new TextDecoder().decode(r.clientDataJSON));
+        if (clientData.type !== "webauthn.get") throw new Error("応答の種別が不正です");
+        if (clientData.challenge !== expected) throw new Error("チャレンジが一致しません");
+        if (clientData.origin !== location.origin) throw new Error("接続元が一致しません");
+        var authData = new Uint8Array(r.authenticatorData);
+        var flags = authData[32];
+        if (!(flags & 0x01)) throw new Error("本人操作が確認できません");
+        if (!(flags & 0x04)) throw new Error("Face ID / パスコードによる確認が行われていません");
+        return crypto.subtle.digest("SHA-256", r.clientDataJSON).then(function (hash) {
+          var signed = new Uint8Array(authData.length + 32);
+          signed.set(authData, 0);
+          signed.set(new Uint8Array(hash), authData.length);
+          return crypto.subtle.importKey("spki", b64uToBuf(admin.publicKey),
+            { name: "ECDSA", namedCurve: "P-256" }, false, ["verify"]
+          ).then(function (key) {
+            return crypto.subtle.verify({ name: "ECDSA", hash: "SHA-256" }, key,
+              derToRaw(new Uint8Array(r.signature)), signed);
+          });
+        });
+      }).then(function (ok) {
+        if (!ok) throw new Error("署名の検証に失敗しました");
+        adminUnlocked = true;
+        applyLock();
+        selectSub(currentSub); // 解錠直後にカメラを従業員タブへ戻す
+        renderAll();
+      }).catch(function (e) {
+        $("lockError").textContent = "解錠できませんでした：" + (e && e.message ? e.message : e);
+      });
+    }
+
+    function renderPasskeyState() {
+      var box = $("passkeyState");
+      if (admin) {
+        box.innerHTML = "この端末のパスキーが<b>設定済み</b>です（" +
+          new Date(admin.createdAt).toLocaleString("ja-JP") + "）。管理画面を開くたびに解錠が必要です。";
+        $("regPasskeyBtn").hidden = true;
+        $("delPasskeyBtn").hidden = false;
+      } else {
+        box.innerHTML = "パスキーは<b>未設定</b>です。いまは誰でも管理画面を開ける状態です。" +
+          (passkeySupported() ? "" : "<br />※この端末・ブラウザはパスキーに対応していません。");
+        $("regPasskeyBtn").hidden = false;
+        $("regPasskeyBtn").disabled = !passkeySupported();
+        $("delPasskeyBtn").hidden = true;
+      }
+    }
+
+    function applyLock() {
+      var locked = !!admin && !adminUnlocked;
+      $("lockCard").hidden = !locked;
+      $("adminBody").hidden = locked;
+      if (locked) { $("lockError").textContent = ""; }
+    }
+
+    // ------------------------------------------------------------------
+    // タブ
+    // ------------------------------------------------------------------
+    function selectTab(name) {
+      ["punch", "today", "admin"].forEach(function (t) { $("panel-" + t).hidden = t !== name; });
+      document.querySelectorAll("nav.tabs button").forEach(function (b) {
+        b.setAttribute("aria-selected", String(b.dataset.tab === name));
+      });
+      var stage = $("stage");
+      if (name === "punch") {
+        stage.hidden = false;
+        $("slot-punch").appendChild(stage);
+        mode = "punch";
+        resetKiosk();
+      } else if (name === "admin" && currentSub === "emp" && (!admin || adminUnlocked)) {
+        stage.hidden = false;
+        $("slot-enroll").appendChild(stage);
+        mode = "enroll";
+        refreshEnrollUI();
+      } else {
+        stage.hidden = true;
+        document.body.appendChild(stage);
+      }
+      if (name === "admin") { applyLock(); renderPasskeyState(); }
+      renderAll();
+    }
+
+    var currentSub = "emp";
+    function selectSub(name) {
+      currentSub = name;
+      ["emp", "records", "report", "settings"].forEach(function (s) { $("sub-" + s).hidden = s !== name; });
+      document.querySelectorAll(".subtabs button").forEach(function (b) {
+        b.setAttribute("aria-selected", String(b.dataset.sub === name));
+      });
+      var stage = $("stage");
+      if (name === "emp") {
+        stage.hidden = false;
+        $("slot-enroll").appendChild(stage);
+        mode = "enroll";
+        refreshEnrollUI();
+      } else {
+        stage.hidden = true;
+        document.body.appendChild(stage);
+      }
+      renderAll();
+    }
+
+    // ------------------------------------------------------------------
+    // 設定
+    // ------------------------------------------------------------------
+    function renderSettings() {
+      $("setThreshold").value = config.threshold;
+      $("valThreshold").textContent = Number(config.threshold).toFixed(2);
+      $("setStreak").value = config.streak;
+      $("valStreak").textContent = config.streak + " 回";
+      $("setDup").value = config.dupMinutes;
+      $("valDup").textContent = config.dupMinutes + " 分";
+      $("setInputSize").value = String(config.inputSize);
+      if (!$("setInputSize").value) { config.inputSize = "auto"; $("setInputSize").value = "auto"; }
+      $("stageInner").classList.toggle("mirror", !!config.mirror);
+      $("mirrorToggle").textContent = "左右反転 " + (config.mirror ? "ON" : "OFF");
+      $("syncUrl").value = config.syncUrl || "";
+      $("syncToken").value = config.syncToken || "";
+      $("syncDevice").value = config.syncDevice || "";
+      $("syncAuto").checked = !!config.syncAuto;
+      renderSyncState();
+    }
+    function saveConfig() { writeJSON(KEY_CONFIG, config); renderSettings(); }
+
+    // ------------------------------------------------------------------
+    // イベント
+    // ------------------------------------------------------------------
+    document.querySelectorAll("nav.tabs button").forEach(function (b) {
+      b.onclick = function () { selectTab(b.dataset.tab); };
+    });
+    document.querySelectorAll(".subtabs button").forEach(function (b) {
+      b.onclick = function () { selectSub(b.dataset.sub); };
+    });
+
+    $("camToggle").onclick = function () { stream ? stopCamera() : startCamera(); };
+    $("mirrorToggle").onclick = function () { config.mirror = !config.mirror; saveConfig(); };
+
+    $("btnIn").onclick = function () { doPunch("in"); };
+    $("btnOut").onclick = function () { doPunch("out"); };
+
+    $("empName").oninput = refreshEnrollUI;
+    $("empConsent").onchange = refreshEnrollUI;
+    $("shotBtn").onclick = takeShot;
+    $("resetShotBtn").onclick = function () { enroll.shots = []; refreshEnrollUI(); };
+    $("saveEmpBtn").onclick = saveEmployee;
+    $("addSampleBtn").onclick = addSampleToEmployee;
+    $("addSampleTarget").onchange = syncShotButton;
+    $("empFileBtn").onclick = function () { $("empFile").click(); };
+    $("empFile").onchange = function (e) {
+      if (e.target.files && e.target.files[0]) enrollFromImage(e.target.files[0]);
+      e.target.value = "";
+    };
+    $("importFaceAuthBtn").onclick = importFromFaceAuth;
+
+    $("addPunchBtn").onclick = function () {
+      var empId = $("addPunchEmp").value;
+      var at = $("addPunchAt").value;
+      if (!empId) { alert("従業員を選んでください。"); return; }
+      if (!at) { alert("日時を入力してください。"); return; }
+      var d = new Date(at);
+      if (isNaN(d.getTime())) { alert("日時の形式が正しくありません。"); return; }
+      punches.push({ id: uid("pn"), empId: empId, type: $("addPunchType").value, ts: d.toISOString(), source: "manual" });
+      writeJSON(KEY_PUNCH, punches);
+      renderAll();
+    };
+    $("recMonth").onchange = renderRecords;
+    $("recEmp").onchange = renderRecords;
+    $("repMonth").onchange = renderReport;
+    $("repEmp").onchange = renderReport;
+    $("csvSummaryBtn").onclick = exportSummaryCSV;
+    $("csvPunchBtn").onclick = exportPunchCSV;
+
+    $("setThreshold").oninput = function (e) { config.threshold = Number(e.target.value); saveConfig(); };
+    $("setStreak").oninput = function (e) { config.streak = Number(e.target.value); saveConfig(); };
+    $("setDup").oninput = function (e) { config.dupMinutes = Number(e.target.value); saveConfig(); };
+    $("setInputSize").onchange = function (e) {
+      config.inputSize = e.target.value === "auto" ? "auto" : Number(e.target.value);
+      saveConfig();
+    };
+
+    $("exportAllBtn").onclick = function () {
+      var data = { version: 1, exportedAt: new Date().toISOString(), employees: employees, punches: punches, config: config };
+      var blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "kintai-backup-" + dayKey(new Date()) + ".json";
+      a.click();
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+    };
+    $("importAllBtn").onclick = function () { $("importAllFile").click(); };
+    $("importAllFile").onchange = function (e) {
+      var file = e.target.files && e.target.files[0];
+      e.target.value = "";
+      if (!file) return;
+      var r = new FileReader();
+      r.onload = function () {
+        try {
+          var d = JSON.parse(r.result);
+          if (!Array.isArray(d.employees) || !Array.isArray(d.punches)) throw new Error("形式が違います");
+          if (!confirm("現在の従業員 " + employees.length + " 人 / 打刻 " + punches.length + " 件を、" +
+                       "読み込んだデータ（" + d.employees.length + " 人 / " + d.punches.length + " 件）で置き換えます。よろしいですか？")) return;
+          employees = d.employees;
+          punches = d.punches;
+          if (d.config) config = Object.assign({}, DEFAULTS, d.config);
+          writeJSON(KEY_EMP, employees);
+          writeJSON(KEY_PUNCH, punches);
+          writeJSON(KEY_CONFIG, config);
+          renderSettings();
+          renderAll();
+          alert("読み込みました。");
+        } catch (err) { alert("読み込みに失敗しました：" + err.message); }
+      };
+      r.readAsText(file);
+    };
+    $("clearAllBtn").onclick = function () {
+      if (!confirm("従業員・打刻記録・設定をすべて削除します。元に戻せません。よろしいですか？")) return;
+      if (!confirm("本当に削除しますか？ CSVやJSONの書き出しは済んでいますか？")) return;
+      employees = []; punches = []; config = Object.assign({}, DEFAULTS);
+      localStorage.removeItem(KEY_EMP);
+      localStorage.removeItem(KEY_PUNCH);
+      localStorage.removeItem(KEY_CONFIG);
+      renderSettings();
+      renderAll();
+    };
+
+    function saveSyncField(key, value) {
+      config[key] = value.trim();
+      writeJSON(KEY_CONFIG, config);
+      renderSyncState();
+    }
+    $("syncUrl").onchange = function (e) { saveSyncField("syncUrl", e.target.value); };
+    $("syncToken").onchange = function (e) { saveSyncField("syncToken", e.target.value); };
+    $("syncDevice").onchange = function (e) { saveSyncField("syncDevice", e.target.value); };
+    $("syncAuto").onchange = function (e) { config.syncAuto = e.target.checked; writeJSON(KEY_CONFIG, config); };
+    $("syncTestBtn").onclick = function () {
+      saveSyncField("syncUrl", $("syncUrl").value);
+      saveSyncField("syncToken", $("syncToken").value);
+      $("syncResult").textContent = "接続を確認しています…";
+      syncPost({ token: config.syncToken, ping: true })
+        .then(function (data) {
+          $("syncResult").innerHTML = "接続できました。シート「<b>" + (data.sheet || "?") +
+            "</b>」に現在 " + (data.total || 0) + " 件の打刻があります。";
+        })
+        .catch(function (e) { $("syncResult").textContent = "接続できませんでした：" + e.message; });
+    };
+    $("syncNowBtn").onclick = function () {
+      saveSyncField("syncUrl", $("syncUrl").value);
+      saveSyncField("syncToken", $("syncToken").value);
+      $("syncResult").textContent = "送信しています…";
+      flushSync(true, function (e, data) {
+        if (e) { $("syncResult").textContent = "送信できませんでした：" + e.message; return; }
+        $("syncResult").textContent = "送信しました（新規 " + data.added + " 件 / 更新 " +
+          (data.updated || 0) + " 件 / 変更なし " + (data.skipped || 0) + " 件 / シート合計 " +
+          (data.total || 0) + " 件）";
+      });
+    };
+    $("syncOpenBtn").onclick = function () {
+      if (!config.syncUrl) { $("syncResult").textContent = "先にURLを設定してください。"; return; }
+      window.open(config.syncUrl + (config.syncUrl.indexOf("?") < 0 ? "?" : "&") +
+        "token=" + encodeURIComponent(config.syncToken), "_blank");
+    };
+
+    $("regPasskeyBtn").onclick = registerPasskey;
+    $("delPasskeyBtn").onclick = function () {
+      if (!confirm("パスキーを解除します。管理画面は誰でも開ける状態に戻ります。よろしいですか？")) return;
+      admin = null;
+      localStorage.removeItem(KEY_ADMIN);
+      adminUnlocked = true;
+      renderPasskeyState();
+      applyLock();
+    };
+    $("unlockBtn").onclick = unlockWithPasskey;
+
+    window.addEventListener("beforeunload", function () {
+      if (stream) stream.getTracks().forEach(function (t) { t.stop(); });
+    });
+
+    // ------------------------------------------------------------------
+    // 起動
+    // ------------------------------------------------------------------
+    tickClock();
+    renderSettings();
+    var thisMonth = monthKey(new Date());
+    $("recMonth").value = thisMonth;
+    $("repMonth").value = thisMonth;
+    $("addPunchAt").value = localInputValue(new Date());
+    renderAll();
+    renderPasskeyState();
+    applyLock();
+    selectTab("punch");
+    boot();
+    if (config.syncAuto && config.syncUrl && unsyncedPunches().length) {
+      setTimeout(function () { flushSync(false, function (e) { if (e) console.warn("同期に失敗:", e.message); }); }, 3000);
+    }
+  })();
+  </script>
+</body>
+</html>

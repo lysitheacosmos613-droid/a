@@ -1,0 +1,452 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Phone Portal</title>
+<style>
+  :root { --bg:#05060c; }
+  html,body{margin:0;height:100%;background:var(--bg);}
+  body{display:flex;align-items:center;justify-content:center;}
+  canvas{height:100vh;max-width:100vw;object-fit:contain;display:block;}
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+// ===== 携帯の中から映像があふれ出る動画 =====
+// window.renderFrame(t) を呼ぶと時刻 t 秒のフレームを描く（決定的）。
+// URL に ?render が無ければ、ブラウザでそのままループ再生する。
+const W = 1080, H = 1920, DURATION = 14;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const JP = '"IPAGothic","Hiragino Sans","Noto Sans JP",sans-serif';
+
+// ---------- 小道具 ----------
+const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const seg = (t, a, b) => clamp((t - a) / (b - a));
+const easeInOut = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+const easeOut = t => 1 - Math.pow(1 - t, 3);
+const easeIn = t => t * t * t;
+const easeOutBack = t => { const c = 1.6; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
+function rng(seed) { return () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; }; }
+function rr(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+
+// ---------- 電話の形 ----------
+const PW = 560, PH = 1140, PR = 86;        // 本体
+const SI = 20, SW = PW - SI * 2, SH = PH - SI * 2, SR = PR - SI; // 画面
+const FOCAL = 5; // 奥行き感
+
+// 電話の姿勢（時間で変わる）
+function phonePose(t) {
+  const enter = easeOutBack(seg(t, 0, 1.6));
+  const cx = W / 2 + Math.sin(t * 0.55) * 14;
+  const cy = lerp(H + 700, 990, enter) + Math.sin(t * 0.9) * 10;
+  const rot = lerp(0.35, 0, easeOut(seg(t, 0, 1.8))) + Math.sin(t * 0.45 + .6) * 0.045;
+  const sc = lerp(0.8, 1, enter) * (1 - 0.06 * easeInOut(seg(t, 12.2, 14)));
+  const tilt = Math.sin(t * 0.5) * 10; // 側面の厚みの見え方
+  return { cx, cy, rot, sc, tilt };
+}
+// 電話ローカル座標（中心原点）→ ワールド
+function toWorld(p, x, y) {
+  const c = Math.cos(p.rot), s = Math.sin(p.rot);
+  return { x: p.cx + (x * c - y * s) * p.sc, y: p.cy + (x * s + y * c) * p.sc };
+}
+function applyPhone(p) { ctx.translate(p.cx, p.cy); ctx.rotate(p.rot); ctx.scale(p.sc, p.sc); }
+
+// ---------- 背景 ----------
+const R0 = rng(7);
+const dust = Array.from({ length: 90 }, () => ({ x: R0() * W, y: R0() * H, r: 1 + R0() * 3.5, s: .2 + R0() * .8, ph: R0() * 6.28, hue: 190 + R0() * 120 }));
+function drawBackground(t, glow) {
+  const g = ctx.createRadialGradient(W / 2, H * .5, 50, W / 2, H * .5, H * .8);
+  g.addColorStop(0, `hsl(${235 + glow * 30},45%,${10 + glow * 8}%)`);
+  g.addColorStop(.55, '#070914');
+  g.addColorStop(1, '#020308');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // 画面の光が周囲へこぼれる
+  if (glow > 0) {
+    const p = phonePose(t);
+    const lg = ctx.createRadialGradient(p.cx, p.cy, 100, p.cx, p.cy, 900);
+    lg.addColorStop(0, `hsla(${200 + Math.sin(t) * 40},90%,60%,${.22 * glow})`);
+    lg.addColorStop(1, 'hsla(260,90%,50%,0)');
+    ctx.fillStyle = lg; ctx.fillRect(0, 0, W, H);
+  }
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  for (const d of dust) {
+    const y = (d.y - t * 30 * d.s + H * 4) % H;
+    const x = d.x + Math.sin(t * .6 + d.ph) * 20;
+    const a = (.15 + .25 * Math.sin(t * 1.3 + d.ph) ** 2) * (0.3 + glow);
+    ctx.fillStyle = `hsla(${d.hue},80%,70%,${a})`;
+    ctx.beginPath(); ctx.arc(x, y, d.r, 0, 6.283); ctx.fill();
+  }
+  ctx.restore();
+}
+
+// ---------- 画面の中身 ----------
+// すべて画面ローカル座標（左上 0,0 / SW×SH）で描く
+function scrAurora(t, a) {
+  ctx.fillStyle = '#060818'; ctx.fillRect(0, 0, SW, SH);
+  ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = a;
+  for (let i = 0; i < 5; i++) {
+    const hue = 180 + i * 38 + Math.sin(t * .4) * 20;
+    ctx.beginPath();
+    const base = SH * (.25 + i * .13);
+    ctx.moveTo(-20, SH + 20);
+    for (let x = -20; x <= SW + 20; x += 12) {
+      const y = base + Math.sin(x * .012 + t * (1 + i * .25) + i) * 60 + Math.sin(x * .031 - t * 1.7 + i * 2) * 25;
+      ctx.lineTo(x, y);
+    }
+    ctx.lineTo(SW + 20, SH + 20); ctx.closePath();
+    const g = ctx.createLinearGradient(0, base - 100, 0, base + 400);
+    g.addColorStop(0, `hsla(${hue},95%,60%,.55)`);
+    g.addColorStop(1, `hsla(${hue + 40},95%,40%,0)`);
+    ctx.fillStyle = g; ctx.fill();
+  }
+  ctx.restore();
+}
+const cards = Array.from({ length: 14 }, (_, i) => ({ hue: (i * 47 + 200) % 360, tall: i % 3 === 0 }));
+function scrFeed(t, a, scroll) {
+  ctx.save(); ctx.globalAlpha = a;
+  // ステータスバー
+  ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.font = `600 26px ${JP}`;
+  ctx.fillText('9:41', 44, 58);
+  ctx.fillRect(SW - 92, 40, 44, 20);
+  let y = 110 - scroll;
+  for (let i = 0; i < cards.length; i++) {
+    const c = cards[i], h = c.tall ? 360 : 230;
+    if (y > SH) break;
+    if (y + h > 0) {
+      ctx.save();
+      rr(28, y, SW - 56, h, 34);
+      ctx.fillStyle = 'rgba(255,255,255,.07)'; ctx.fill();
+      ctx.clip();
+      // サムネイル：動くグラデーション
+      const g = ctx.createLinearGradient(28, y, SW - 28, y + h);
+      g.addColorStop(0, `hsl(${c.hue + Math.sin(t + i) * 20},85%,58%)`);
+      g.addColorStop(1, `hsl(${c.hue + 70},85%,40%)`);
+      ctx.fillStyle = g; ctx.fillRect(28, y, SW - 56, h - 80);
+      // サムネの中の丸
+      ctx.globalCompositeOperation = 'lighter';
+      for (let k = 0; k < 3; k++) {
+        ctx.fillStyle = `hsla(${c.hue + k * 40},100%,75%,.35)`;
+        ctx.beginPath();
+        ctx.arc(80 + ((k * 140 + t * 60 + i * 30) % (SW - 60)), y + 60 + k * 40 + Math.sin(t * 2 + k) * 20, 40 + k * 14, 0, 6.283);
+        ctx.fill();
+      }
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.fillStyle = 'rgba(255,255,255,.8)'; rr(56, y + h - 58, 200, 16, 8); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,.35)'; rr(56, y + h - 32, 300, 12, 6); ctx.fill();
+      ctx.restore();
+    }
+    y += h + 26;
+  }
+  ctx.restore();
+}
+// 奥へ続くトンネル（画面の中の奥行き）
+function scrTunnel(t, a) {
+  ctx.save(); ctx.globalAlpha = a;
+  ctx.fillStyle = '#03030a'; ctx.fillRect(0, 0, SW, SH);
+  const cx = SW / 2, cy = SH / 2;
+  ctx.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < 16; i++) {
+    const d = ((i / 16) + t * .35) % 1;      // 0=最奥 1=手前
+    const s = Math.pow(d, 2.2);
+    const w = SW * 1.1 * s, h = SH * 1.1 * s;
+    ctx.strokeStyle = `hsla(${200 + i * 12 + t * 40},95%,65%,${s * .9})`;
+    ctx.lineWidth = 1 + s * 7;
+    rr(cx - w / 2, cy - h / 2, w, h, Math.max(2, SR * s));
+    ctx.stroke();
+  }
+  const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, 220);
+  g.addColorStop(0, 'rgba(210,235,255,.9)'); g.addColorStop(1, 'rgba(120,80,255,0)');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, 220, 0, 6.283); ctx.fill();
+  ctx.restore();
+}
+function scrTitle(t, a) {
+  ctx.save(); ctx.globalAlpha = a;
+  const g = ctx.createLinearGradient(0, 0, SW, SH);
+  g.addColorStop(0, '#1a0f3d'); g.addColorStop(.5, '#0b2a4a'); g.addColorStop(1, '#2b0b33');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, SW, SH);
+  ctx.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < 3; i++) {
+    const rg = ctx.createRadialGradient(SW / 2 + Math.sin(t + i * 2) * 120, SH / 2 + Math.cos(t * .8 + i) * 200, 0, SW / 2, SH / 2, 420);
+    rg.addColorStop(0, `hsla(${190 + i * 60},90%,60%,.35)`); rg.addColorStop(1, 'hsla(0,0%,0%,0)');
+    ctx.fillStyle = rg; ctx.fillRect(0, 0, SW, SH);
+  }
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.textAlign = 'center';
+  const k = easeOut(seg(t, 11.3, 12.1));
+  ctx.globalAlpha = a * k;
+  ctx.fillStyle = '#fff'; ctx.font = `700 64px ${JP}`;
+  ctx.shadowColor = 'rgba(140,200,255,.9)'; ctx.shadowBlur = 30;
+  ctx.fillText('画面の、', SW / 2, SH / 2 - 30 + (1 - k) * 30);
+  ctx.fillText('その先へ。', SW / 2, SH / 2 + 60 + (1 - k) * 30);
+  ctx.shadowBlur = 0;
+  ctx.globalAlpha = a * easeOut(seg(t, 11.9, 12.7)) * .7;
+  ctx.font = `500 24px ${JP}`; ctx.fillText('BEYOND THE SCREEN', SW / 2, SH / 2 + 140);
+  ctx.restore();
+}
+function drawScreen(t) {
+  const on = easeOut(seg(t, 1.5, 2.3));
+  if (on <= 0) { ctx.fillStyle = '#010104'; ctx.fillRect(0, 0, SW, SH); return; }
+  const feedA = seg(t, 2.1, 2.6) * (1 - seg(t, 4.8, 5.4));
+  const tunA = seg(t, 5.0, 5.6) * (1 - seg(t, 11.0, 11.5));
+  const titA = seg(t, 11.0, 11.5);
+  scrAurora(t, 1);
+  if (feedA > 0) scrFeed(t, feedA, easeInOut(seg(t, 2.3, 5.2)) * 1100);
+  if (tunA > 0) scrTunnel(t, tunA);
+  if (titA > 0) scrTitle(t, titA);
+  // 電源オンの光の線
+  if (on < 1) {
+    ctx.fillStyle = '#010104'; ctx.globalAlpha = 1 - on; ctx.fillRect(0, 0, SW, SH); ctx.globalAlpha = 1;
+    const lh = SH * on;
+    const g = ctx.createLinearGradient(0, SH / 2 - lh / 2, 0, SH / 2 + lh / 2);
+    g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(.5, `rgba(255,255,255,${1 - on})`); g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g; ctx.fillRect(0, SH / 2 - lh / 2 - 4, SW, lh + 8);
+  }
+  // 次の場面へ移るときの閃光
+  const flash = Math.max(Math.exp(-Math.pow((t - 5.2) / .12, 2)), Math.exp(-Math.pow((t - 11.1) / .12, 2)));
+  if (flash > .01) { ctx.fillStyle = `rgba(230,240,255,${flash * .85})`; ctx.fillRect(0, 0, SW, SH); }
+}
+
+// ---------- 電話本体 ----------
+function drawPhoneBody(t, p) {
+  ctx.save(); applyPhone(p);
+  // 影
+  ctx.save(); ctx.shadowColor = 'rgba(0,0,0,.7)'; ctx.shadowBlur = 80; ctx.shadowOffsetY = 40;
+  rr(-PW / 2, -PH / 2, PW, PH, PR); ctx.fillStyle = '#0c0d12'; ctx.fill(); ctx.restore();
+  // 側面の厚み（傾きで見え方が変わる）
+  rr(-PW / 2 + p.tilt, -PH / 2 + 8, PW, PH, PR);
+  ctx.fillStyle = '#23252e'; ctx.fill();
+  // 本体の縁：金属
+  const g = ctx.createLinearGradient(-PW / 2, -PH / 2, PW / 2, PH / 2);
+  g.addColorStop(0, '#8a8d99'); g.addColorStop(.3, '#2b2d36'); g.addColorStop(.55, '#a9acb8'); g.addColorStop(1, '#1b1c22');
+  rr(-PW / 2, -PH / 2, PW, PH, PR); ctx.fillStyle = g; ctx.fill();
+  rr(-PW / 2 + 5, -PH / 2 + 5, PW - 10, PH - 10, PR - 5); ctx.fillStyle = '#07080b'; ctx.fill();
+  // ボタン
+  ctx.fillStyle = '#5a5d68';
+  rr(PW / 2 - 2, -260, 7, 120, 3); ctx.fill();
+  rr(-PW / 2 - 5, -300, 7, 70, 3); ctx.fill();
+  rr(-PW / 2 - 5, -200, 7, 70, 3); ctx.fill();
+  ctx.restore();
+}
+function withScreenClip(p, fn) {
+  ctx.save(); applyPhone(p);
+  rr(-SW / 2, -SH / 2, SW, SH, SR); ctx.clip();
+  ctx.translate(-SW / 2, -SH / 2);
+  fn(); ctx.restore();
+}
+function drawGlassAndIsland(t, p) {
+  ctx.save(); applyPhone(p);
+  rr(-SW / 2, -SH / 2, SW, SH, SR); ctx.clip();
+  // ガラスの映り込み
+  const g = ctx.createLinearGradient(-SW / 2, -SH / 2, SW / 2, SH / 2);
+  const sh = (Math.sin(t * .5) + 1) / 2;
+  g.addColorStop(clamp(sh * .6), 'rgba(255,255,255,0)');
+  g.addColorStop(clamp(sh * .6 + .08), 'rgba(255,255,255,.10)');
+  g.addColorStop(clamp(sh * .6 + .2), 'rgba(255,255,255,0)');
+  ctx.fillStyle = g; ctx.fillRect(-SW / 2, -SH / 2, SW, SH);
+  ctx.restore();
+  ctx.save(); applyPhone(p);
+  rr(-68, -SH / 2 + 22, 136, 38, 19); ctx.fillStyle = '#000'; ctx.fill();
+  ctx.fillStyle = '#10131c'; ctx.beginPath(); ctx.arc(40, -SH / 2 + 41, 9, 0, 6.283); ctx.fill();
+  ctx.restore();
+}
+
+// ---------- 飛び出すもの ----------
+// 各オーブは「画面の奥 → 画面を抜けて手前 → 電話のまわりを周回 → 画面へ帰る」
+const R1 = rng(42);
+const orbs = Array.from({ length: 9 }, (_, i) => ({
+  t0: 5.9 + i * 0.22,
+  hue: (i * 40 + 180) % 360,
+  r: 34 + R1() * 34,
+  orbitR: 360 + R1() * 170,
+  orbitY: -420 + i * 105 + (R1() - .5) * 60,
+  a0: R1() * 6.283,
+  spd: (0.9 + R1() * .5) * (i % 2 ? 1 : -1),
+  ex: (R1() - .5) * 300, ey: (R1() - .5) * 500,
+  back: 10.0 + i * 0.09,
+}));
+// 位置：電話ローカル座標 x,y と奥行き z（z<0 は画面の奥/電話の裏、z>0 は手前）
+// mode: 'tunnel'（画面の中に見える）/ 'free'（空間にいる）
+function orbState(o, t) {
+  if (t < o.t0) return null;
+  const orbitAt = tt => {
+    const a = o.a0 + (tt - o.t0) * o.spd;
+    return { x: Math.cos(a) * o.orbitR, y: o.orbitY + Math.sin(a * 2) * 40, z: Math.sin(a) * 1.3 };
+  };
+  const E = 1.3; // 画面から出てくる時間
+  if (t < o.t0 + E) {
+    const k = (t - o.t0) / E;
+    const z = lerp(-6, 1.4, easeOut(k));
+    const xy = easeInOut(k);
+    return { x: o.ex * xy, y: o.ey * xy, z, mode: z < 0 ? 'tunnel' : 'free' };
+  }
+  const exitP = { x: o.ex, y: o.ey, z: 1.4 };
+  if (t < o.back) {
+    const b = easeInOut(seg(t, o.t0 + E, o.t0 + E + .9));
+    const q = orbitAt(t);
+    return { x: lerp(exitP.x, q.x, b), y: lerp(exitP.y, q.y, b), z: lerp(exitP.z, q.z, b), mode: 'free' };
+  }
+  // 帰還：まず手前で画面中央へ寄り、そのあと奥へ潜る
+  const q = orbitAt(o.back);
+  const k = seg(t, o.back, o.back + 1.0);
+  const m = easeInOut(clamp(k / .55));
+  const zf = lerp(q.z, 1.2, m);
+  const dive = easeIn(clamp((k - .5) / .5));
+  const z = lerp(zf, -8, dive);
+  if (k >= 1) return null;
+  return { x: lerp(q.x, 0, m), y: lerp(q.y, 0, m), z, mode: z < 0 && dive > 0 ? 'tunnel' : 'free' };
+}
+function depthScale(z) { return z >= 0 ? 1 + z * .42 : FOCAL / (FOCAL - z); }
+
+function drawOrb(x, y, r, hue, alpha) {
+  if (r < .5 || alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha = alpha;
+  // 外側の光
+  ctx.globalCompositeOperation = 'lighter';
+  const halo = ctx.createRadialGradient(x, y, r * .5, x, y, r * 2.6);
+  halo.addColorStop(0, `hsla(${hue},100%,65%,.45)`); halo.addColorStop(1, `hsla(${hue},100%,50%,0)`);
+  ctx.fillStyle = halo; ctx.beginPath(); ctx.arc(x, y, r * 2.6, 0, 6.283); ctx.fill();
+  ctx.globalCompositeOperation = 'source-over';
+  // ガラス玉
+  const g = ctx.createRadialGradient(x - r * .35, y - r * .4, r * .1, x, y, r);
+  g.addColorStop(0, `hsl(${hue},100%,92%)`); g.addColorStop(.35, `hsl(${hue},95%,62%)`);
+  g.addColorStop(.85, `hsl(${hue + 30},90%,32%)`); g.addColorStop(1, `hsl(${hue + 40},90%,18%)`);
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, 6.283); ctx.fill();
+  // ハイライト
+  ctx.fillStyle = 'rgba(255,255,255,.75)';
+  ctx.beginPath(); ctx.ellipse(x - r * .38, y - r * .45, r * .28, r * .16, -.6, 0, 6.283); ctx.fill();
+  ctx.strokeStyle = `hsla(${hue},100%,85%,.5)`; ctx.lineWidth = Math.max(1, r * .05);
+  ctx.beginPath(); ctx.arc(x, y, r * .92, .3, 1.6); ctx.stroke();
+  ctx.restore();
+}
+function drawTrail(o, t, p, want) {
+  // want: 'tunnel' | 'behind' | 'front'
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  const N = 18;
+  for (let i = N; i >= 1; i--) {
+    const tt = t - i * 0.022;
+    const s = orbState(o, tt); if (!s) continue;
+    const cls = s.mode === 'tunnel' ? 'tunnel' : (s.z < 0 ? 'behind' : 'front');
+    if (cls !== want) continue;
+    const ds = depthScale(s.z);
+    const w = want === 'tunnel' ? { x: s.x * ds + SW / 2, y: s.y * ds + SH / 2 } : toWorld(p, s.x, s.y);
+    const r = o.r * ds * (1 - i / N) * .55 * (want === 'tunnel' ? 1 : p.sc);
+    ctx.fillStyle = `hsla(${o.hue},100%,65%,${(1 - i / N) * .35})`;
+    ctx.beginPath(); ctx.arc(w.x, w.y, Math.max(.5, r), 0, 6.283); ctx.fill();
+  }
+  ctx.restore();
+}
+// 画面の中（トンネル内）にいるオーブ
+function drawTunnelOrbs(t) {
+  for (const o of orbs) {
+    const s = orbState(o, t); if (!s || s.mode !== 'tunnel') continue;
+    const ds = depthScale(s.z);
+    drawOrb(s.x * ds + SW / 2, s.y * ds + SH / 2, o.r * ds, o.hue, clamp(1 + s.z / 8));
+  }
+}
+function drawTunnelTrails(t, p) { for (const o of orbs) drawTrail(o, t, p, 'tunnel'); }
+
+function freeOrbs(t, p, side) {
+  const list = [];
+  for (const o of orbs) {
+    const s = orbState(o, t); if (!s || s.mode !== 'free') continue;
+    if ((side === 'front') !== (s.z >= 0)) continue;
+    list.push({ o, s });
+  }
+  list.sort((a, b) => a.s.z - b.s.z);
+  for (const { o, s } of list) {
+    const w = toWorld(p, s.x, s.y);
+    const ds = depthScale(s.z);
+    drawOrb(w.x, w.y, o.r * ds * p.sc, o.hue, side === 'front' ? 1 : .85);
+  }
+}
+// 手前のオーブが電話の上に落とす影
+function drawOrbShadows(t, p) {
+  ctx.save(); applyPhone(p);
+  rr(-PW / 2, -PH / 2, PW, PH, PR); ctx.clip();
+  for (const o of orbs) {
+    const s = orbState(o, t); if (!s || s.mode !== 'free' || s.z < 0) continue;
+    const off = 30 + s.z * 70, r = o.r * (1 + s.z * .5);
+    const g = ctx.createRadialGradient(s.x + off * .4, s.y + off, 0, s.x + off * .4, s.y + off, r * 1.6);
+    g.addColorStop(0, `rgba(0,0,0,${.45 / (1 + s.z)})`); g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(s.x + off * .4, s.y + off, r * 1.6, 0, 6.283); ctx.fill();
+  }
+  ctx.restore();
+}
+
+// 画面を抜ける瞬間の火花
+const R2 = rng(99);
+const sparks = Array.from({ length: 140 }, () => ({ a: R2() * 6.283, v: 250 + R2() * 700, h: 170 + R2() * 160, life: .6 + R2() * .9, sz: 1.5 + R2() * 4, d: R2() * .5 }));
+function drawSparks(t, p) {
+  const T0 = 6.55;
+  if (t < T0 || t > T0 + 2) return;
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  for (const s of sparks) {
+    const k = (t - T0 - s.d) / s.life; if (k < 0 || k > 1) continue;
+    const dist = s.v * easeOut(k);
+    const w = toWorld(p, Math.cos(s.a) * dist * .7, Math.sin(s.a) * dist);
+    ctx.fillStyle = `hsla(${s.h},100%,72%,${1 - k})`;
+    ctx.beginPath(); ctx.arc(w.x, w.y + k * k * 120, s.sz * (1 - k * .5), 0, 6.283); ctx.fill();
+  }
+  ctx.restore();
+}
+// 画面の縁が光る（何かが通り抜けるとき）
+function drawRimGlow(t, p) {
+  let e = 0;
+  for (const o of orbs) {
+    const s = orbState(o, t); if (!s) continue;
+    e = Math.max(e, Math.exp(-s.z * s.z * 1.5));
+  }
+  e *= seg(t, 5.9, 6.2);
+  if (e < .02) return;
+  ctx.save(); applyPhone(p); ctx.globalCompositeOperation = 'lighter';
+  ctx.shadowColor = `hsla(${200 + Math.sin(t * 3) * 60},100%,70%,1)`; ctx.shadowBlur = 40 * e;
+  ctx.strokeStyle = `hsla(${200 + Math.sin(t * 3) * 60},100%,75%,${.7 * e})`; ctx.lineWidth = 4;
+  rr(-SW / 2, -SH / 2, SW, SH, SR); ctx.stroke();
+  ctx.restore();
+}
+
+// ---------- 1フレーム ----------
+function renderFrame(t) {
+  const p = phonePose(t);
+  const glow = easeOut(seg(t, 1.6, 2.6)) * (1 - .5 * seg(t, 13, 14));
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+  drawBackground(t, glow);
+  // 電話の裏側にいるもの
+  for (const o of orbs) drawTrail(o, t, p, 'behind');
+  freeOrbs(t, p, 'behind');
+  drawPhoneBody(t, p);
+  withScreenClip(p, () => { drawScreen(t); drawTunnelTrails(t, p); drawTunnelOrbs(t); });
+  drawGlassAndIsland(t, p);
+  drawRimGlow(t, p);
+  drawOrbShadows(t, p);
+  // 手前に飛び出したもの
+  for (const o of orbs) drawTrail(o, t, p, 'front');
+  freeOrbs(t, p, 'front');
+  drawSparks(t, p);
+  // 周辺減光と、最初と最後のフェード
+  const v = ctx.createRadialGradient(W / 2, H / 2, H * .35, W / 2, H / 2, H * .75);
+  v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,.55)');
+  ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
+  const fade = Math.max(1 - seg(t, 0, .5), seg(t, 13.3, 14));
+  if (fade > 0) { ctx.fillStyle = `rgba(0,0,0,${fade})`; ctx.fillRect(0, 0, W, H); }
+}
+window.renderFrame = renderFrame;
+window.DURATION = DURATION;
+
+if (!location.search.includes('render')) {
+  const start = performance.now();
+  const loop = now => { renderFrame(((now - start) / 1000) % DURATION); requestAnimationFrame(loop); };
+  document.fonts.load(`700 64px ${JP}`).finally(() => requestAnimationFrame(loop));
+}
+</script>
+</body>
+</html>
